@@ -1,6 +1,6 @@
 {
   "name": "@bradhezh/create-prj",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "",
   "main": "dist/index.js",
   "files": [
@@ -11,7 +11,9 @@
   },
   "scripts": {
     "build": "rspack build",
-    "dev": "rspack dev"
+    "dev": "rspack dev",
+    "test": "jest --passWithNoTests",
+    "lint": "eslint ."
   },
   "keywords": [],
   "author": "Brad Hezh",
@@ -22,11 +24,19 @@
     "pnpm": "10.21.0"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.2",
     "@rspack/cli": "^1.6.8",
     "@rspack/core": "^1.6.8",
+    "@swc/core": "^1.15.7",
+    "@swc/jest": "^0.2.39",
+    "@types/jest": "^30.0.0",
     "@types/webpack-node-externals": "^3.0.4",
+    "eslint": "^9.39.2",
+    "globals": "^16.5.0",
+    "jest": "^30.2.0",
     "run-script-webpack-plugin": "^0.2.3",
     "ts-checker-rspack-plugin": "^1.2.3",
+    "typescript-eslint": "^8.50.0",
     "webpack-node-externals": "^3.0.0"
   }
 }

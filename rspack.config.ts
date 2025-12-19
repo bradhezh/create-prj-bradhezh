@@ -1,5 +1,4 @@
 import { defineConfig } from "@rspack/cli";
-import { rspack } from "@rspack/core";
 import nodeExternals from "webpack-node-externals";
 import { TsCheckerRspackPlugin } from "ts-checker-rspack-plugin";
 import { RunScriptWebpackPlugin } from "run-script-webpack-plugin";
