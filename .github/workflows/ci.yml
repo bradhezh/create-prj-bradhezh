@@ -1,12 +1,11 @@
 on:
   push:
-    tags: ["v*"]
+    branches: [master]
+  pull_request:
+    branches: [master]
 
 jobs:
-  publish:
-    permissions:
-      id-token: write
-      contents: read
+  validate:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -14,8 +13,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 24
-          registry-url: "https://registry.npmjs.org/"
+          node-version: 22.21.1
       - name: Setup pnpm
         uses: pnpm/action-setup@v2
         with:
@@ -28,5 +26,3 @@ jobs:
         run: pnpm lint
       - name: Test
         run: pnpm test
-      - name: Publish
-        run: pnpm publish --access public --no-git-checks
