@@ -1,17 +1,32 @@
 {
-  "name": "create-prj-bradhezh",
+  "name": "@bradhezh/create-prj",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "dist/index.js",
+  "files": [
+    "dist"
+  ],
+  "bin": {
+    "create-prj": "dist/index.js"
+  },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "rspack build",
+    "dev": "rspack dev"
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "author": "Brad Hezh",
+  "license": "MIT",
   "packageManager": "pnpm@10.21.0",
   "volta": {
     "node": "22.21.1",
     "pnpm": "10.21.0"
+  },
+  "devDependencies": {
+    "@rspack/cli": "^1.6.8",
+    "@rspack/core": "^1.6.8",
+    "@types/webpack-node-externals": "^3.0.4",
+    "run-script-webpack-plugin": "^0.2.3",
+    "ts-checker-rspack-plugin": "^1.2.3",
+    "webpack-node-externals": "^3.0.0"
   }
 }
