@@ -4,9 +4,13 @@ export const option = {
     backend: "backend",
     frontend: "frontend",
     mobile: "mobile",
-    fullstack: "fullstack",
+    monorepo: "monorepo",
     lib: "lib",
     cli: "cli",
+  },
+  backend: {
+    express: "express",
+    nest: "nest",
   },
   frontend: {
     react: "react",
@@ -16,8 +20,11 @@ export const option = {
   lib: { npmjs: "npmjs" },
   cli: { npmjs: "npmjs" },
   compulsory: {
-    node: { volta: "volta" },
-    npm: { pnpm: "pnpm" },
+    typescript: {
+      nodecorator: "nodecorator",
+      decorator: "decorator",
+      metadata: "metadata",
+    },
     builder: { rspack: "rspack" },
   },
   optional: {
@@ -29,11 +36,6 @@ export const option = {
     docker: { docker: "docker" },
     orm: { prisma: "prisma" },
   },
-} as const;
-
-export const optional = {
-  default: "default",
-  manual: "manual",
 } as const;
 
 type Option = typeof option;
@@ -49,7 +51,11 @@ type RecursivePartial<T> = T extends object
   ? { [K in keyof T]?: RecursivePartial<T[K]> }
   : T;
 type Conf0 = RecursiveWritable<ConfFromOpt<Option>>;
-export type Conf = { name: string } & Pick<Conf0, "type" | "compulsory"> &
+export type Conf = {
+  name: string;
+  volta: boolean;
+  npm: "npm" | "pnpm";
+} & Pick<Conf0, "type" | "compulsory"> &
   RecursivePartial<Omit<Conf0, "type" | "compulsory">>;
 
 const flatOpt = (({ compulsory, optional, ...rest }) => ({
@@ -71,17 +77,22 @@ export const message = {
     backend: "Backend",
     frontend: "Frontend",
     mobile: "Mobile",
-    fullstack: "Fullstack",
+    monorepo: "Monorepo with backend, frontend, or mobile",
     lib: "Library",
     cli: "CLI tool",
   },
+  backend: {
+    q: "Backend?",
+    express: "Express",
+    nest: "NestJS",
+  },
   frontend: {
-    q: "Frontend framework?",
-    react: "React",
+    q: "Frontend?",
+    react: "React (Vite)",
     next: "Next.js",
   },
   mobile: {
-    q: "Mobile framework?",
+    q: "Mobile?",
     expo: "Expo",
   },
   lib: {
@@ -92,13 +103,11 @@ export const message = {
     q: "Package registry for CLI tool?",
     npmjs: "npmjs",
   },
-  node: {
-    q: "Node version management?",
-    volta: "Volta",
-  },
-  npm: {
-    q: "Node package management?",
-    pnpm: "pnpm",
+  typescript: {
+    q: "TypeScript decorator?",
+    nodecorator: "No decorator",
+    decorator: "Decorator",
+    metadata: "Decorator with emitDecoratorMetadata",
   },
   builder: {
     q: "Builder?",
@@ -133,12 +142,30 @@ export const message = {
     prisma: "Prisma",
   },
   optional: {
-    q: "Accept optional ones with defaults, or configure them one by one, or none of them?",
+    q: "Accept optional ones with defaults, or configure them one by one, or choose none of them?",
     default:
-      "Accept defaults (ESLint, Jest, without Git, CI/CD, deployment, and ORM)",
+      "Accept defaults (ESLint, Jest, GitHub, GitHub Actions, Render.com, Docker, and Prisma if applicable)",
     manual: "Configure manually",
   },
   opCanceled: "Operation cancelled.",
+  pmUnsupported: "The tool can only support npm or pnpm for now.",
+  pnpmForMono: "The tool can only support pnpm monorepo for now.",
+} as const;
+
+export const optional = {
+  option: {
+    default: "default",
+    manual: "manual",
+  },
+  default: {
+    lint: option.optional.lint.eslint,
+    test: option.optional.test.jest,
+    git: option.optional.git.github,
+    cicd: option.optional.cicd.ghactions,
+    deploy: option.optional.deploy.render,
+    docker: option.optional.docker.docker,
+    orm: option.optional.orm.prisma,
+  },
 } as const;
 
 const none = {
@@ -187,7 +214,17 @@ export const prompt = {
     initialValue: message.name.initial,
     validate: (value?: string) => (value ? undefined : message.name.validate),
   },
-  fullstack_frontend: {
+  monoBackend: {
+    message: message.backend.q,
+    options: [
+      ...Object.values(option.backend).map((e) => ({
+        value: e,
+        label: message.backend[e],
+      })),
+      none,
+    ],
+  },
+  monoFrontend: {
     message: message.frontend.q,
     options: [
       ...Object.values(option.frontend).map((e) => ({
@@ -197,7 +234,7 @@ export const prompt = {
       none,
     ],
   },
-  fullstack_mobile: {
+  monoMobile: {
     message: message.mobile.q,
     options: [
       ...Object.values(option.mobile).map((e) => ({
@@ -209,17 +246,30 @@ export const prompt = {
   },
   optional: {
     message: message.optional.q,
-    initialValue: optional.default,
+    initialValue: optional.option.default,
     options: [
       {
-        value: optional.default,
+        value: optional.option.default,
         label: message.optional.default,
       },
       {
-        value: optional.manual,
+        value: optional.option.manual,
         label: message.optional.manual,
       },
       none,
     ],
   },
 };
+
+export const template = {
+  url: "https://raw.githubusercontent.com/bradhezh/prj-template/master",
+  package: {
+    node: "package-node.json",
+    express: "package-express.json",
+    nest: "package-nest.json",
+    monorepo: "package-mono.json",
+    share: "package-share.json",
+    lib: "package-lib.json",
+    cli: "package-cli.json",
+  },
+} as const;

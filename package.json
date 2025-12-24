@@ -41,6 +41,8 @@
     "webpack-node-externals": "^3.0.0"
   },
   "dependencies": {
-    "@clack/prompts": "^0.11.0"
+    "@clack/prompts": "^0.11.0",
+    "axios": "^1.13.2",
+    "yaml": "^2.8.2"
   }
 }
