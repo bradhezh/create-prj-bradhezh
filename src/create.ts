@@ -2,78 +2,101 @@ import { execSync } from "child_process";
 import fs from "node:fs";
 import axios from "axios";
 import Yaml from "yaml";
+import { format } from "util";
 
-import { Conf, option, template } from "@/conf";
+import { template, cmd, option, meta, NPM, Conf } from "@/conf";
 
 export const createDir = (conf: Conf) => {
   if (
-    conf.type === option.type.node ||
-    conf.type === option.type.lib ||
-    conf.type === option.type.cli ||
-    conf.type === option.type.backend
+    !(
+      [...meta.type.selfCreateds, option.type.monorepo] as Conf["type"][]
+    ).includes(conf.type)
   ) {
-    fs.mkdirSync("src");
+    fs.mkdirSync(template.src);
     return;
   }
 
   if (conf.type === option.type.monorepo) {
-    if (conf.backend) {
-      fs.mkdirSync("backend/src", { recursive: true });
+    for (const type of meta.type.inMonos.filter(
+      (e) =>
+        conf[e] &&
+        !(meta.type.selfCreateds as readonly Conf["type"][]).includes(e),
+    )) {
+      fs.mkdirSync(`${type}/${template.src}`, { recursive: true });
     }
-    if (
-      (conf.backend && conf.frontend) ||
-      (conf.backend && conf.mobile) ||
-      (conf.frontend && conf.mobile)
-    ) {
-      fs.mkdirSync("share/src", { recursive: true });
+    if (meta.type.inMonos.filter((e) => conf[e]).length > 1) {
+      fs.mkdirSync(`${meta.type.shared}/${template.src}`, { recursive: true });
     }
   }
+
   if (conf.frontend === option.frontend.react) {
-    console.log("create-vite ...");
+    console.log(template.message.createVite);
     execSync(
-      `${conf.npm} create vite ${conf.type !== option.type.monorepo ? "." : "frontend"} --template react-ts`,
+      format(
+        cmd.createVite,
+        conf.npm,
+        conf.type !== option.type.monorepo ? "." : option.type.frontend,
+      ),
       { stdio: "inherit" },
     );
   } else if (conf.frontend === option.frontend.next) {
-    console.log("create-next-app ...");
+    console.log(template.message.createNext);
     execSync(
-      `${conf.npm} create next-app ${conf.type !== option.type.monorepo ? "." : "frontend"} --ts --no-react-compiler --no-src-dir -app --api --eslint --tailwind --skip-install --disable-git`,
+      format(
+        cmd.createNext,
+        conf.npm,
+        conf.type !== option.type.monorepo ? "." : option.type.frontend,
+      ),
       { stdio: "inherit" },
     );
   }
   if (conf.mobile === option.mobile.expo) {
-    console.log("create-expo-app ...");
-    const dir = conf.type !== option.type.monorepo ? "." : "mobile";
-    execSync(`${conf.npm} create expo-app ${dir} --no-install`, {
-      stdio: "inherit",
+    console.log(template.message.createExpo);
+    const dir = conf.type !== option.type.monorepo ? "." : option.type.mobile;
+    execSync(format(cmd.createExpo, conf.npm, dir), { stdio: "inherit" });
+    fs.rmSync(`${dir}/${template.git}`, {
+      recursive: true,
+      force: true,
     });
-    fs.rmSync(`${dir}/.git`, { recursive: true, force: true });
   }
 };
 
 export const createPkg = async (conf: Conf) => {
-  let url: string | undefined;
-  let file = "package.json";
+  const pkgs: {
+    url: string;
+    file: string;
+  }[] = [];
   if (
-    conf.type === option.type.node ||
-    conf.type === option.type.lib ||
-    conf.type === option.type.cli
+    conf.type !== option.type.monorepo &&
+    !(meta.type.selfCreateds as readonly Conf["type"][]).includes(conf.type) &&
+    !(meta.type.withMultiplePkgTmplts as readonly Conf["type"][]).includes(
+      conf.type,
+    )
   ) {
-    url = `${template.url}/${template.package[conf.type]}`;
-  }
-  if (conf.backend) {
-    url = `${template.url}/${template.package[conf.backend]}`;
-    if (conf.type === option.type.monorepo) {
-      file = "backend/package.json";
+    pkgs.push({
+      url: `${template.url}/${template.package[conf.type as keyof typeof template.package]}`,
+      file: template.package.name,
+    });
+  } else {
+    for (const type of meta.type.withMultiplePkgTmplts) {
+      if (conf[type]) {
+        pkgs.push({
+          url: `${template.url}/${template.package[conf[type]]}`,
+          file:
+            conf.type !== option.type.monorepo
+              ? template.package.name
+              : `${type}/package.json`,
+        });
+      }
     }
   }
-  if (url) {
-    const response = await axios.get(`${url}`, { responseType: "text" });
-    fs.writeFileSync(file, response.data);
+  for (const pkg of pkgs) {
+    const response = await axios.get(`${pkg.url}`, { responseType: "text" });
+    fs.writeFileSync(pkg.file, response.data);
   }
 
   if (conf.type !== option.type.monorepo) {
-    execSync(`${conf.npm} pkg set name="${conf.name}"`, { stdio: "ignore" });
+    execSync(format(cmd.pkgSetName, conf.npm, conf.name), { stdio: "ignore" });
     setPkgVer(conf);
     if (conf.type === option.type.lib || conf.type === option.type.cli) {
       setPkgBin(conf);
@@ -89,44 +112,59 @@ const createPkgMono = async (conf: Conf) => {
     `${template.url}/${template.package.monorepo}`,
     { responseType: "text" },
   );
-  fs.writeFileSync("package.json", response.data);
-  if (fs.existsSync("shared")) {
+  fs.writeFileSync(template.package.name, response.data);
+  if (fs.existsSync(meta.type.shared)) {
     const response = await axios.get(
-      `${template.url}/${template.package.share}`,
-      {
-        responseType: "text",
-      },
+      `${template.url}/${template.package.shared}`,
+      { responseType: "text" },
     );
-    fs.writeFileSync("shared/package.json", response.data);
+    fs.writeFileSync(
+      `${meta.type.shared}/${template.package.name}`,
+      response.data,
+    );
   }
-  execSync(`pnpm pkg set name="${conf.name}"`, { stdio: "ignore" });
+  execSync(format(cmd.pkgSetName, conf.npm, conf.name), { stdio: "ignore" });
   setPkgVerMono(conf);
   createWorkspace(conf);
 };
 
 const setPkgVer = (conf: Conf, cwd?: string) => {
   if (conf.volta) {
-    const node = execSync("node -v").toString().trim();
+    const node = execSync(cmd.nodeV).toString().trim();
     execSync(
-      `${conf.npm} pkg set "volta.node"="${!node.startsWith("v") ? node : node.slice(1)}"`,
+      format(
+        cmd.pkgSetVoltaNode,
+        conf.npm,
+        !node.startsWith("v") ? node : node.slice(1),
+      ),
       {
         stdio: "ignore",
         cwd,
       },
     );
-    const npm = execSync(`${conf.npm} -v`).toString().trim();
+    const npm = execSync(format(cmd.npmV, conf.npm)).toString().trim();
     execSync(
-      `${conf.npm} pkg set "volta.${conf.npm}"="${!npm.startsWith("v") ? npm : npm.slice(1)}"`,
+      format(
+        cmd.pkgSetVoltaNpm,
+        conf.npm,
+        conf.npm,
+        !npm.startsWith("v") ? npm : npm.slice(1),
+      ),
       {
         stdio: "ignore",
         cwd,
       },
     );
   }
-  if (conf.npm === "pnpm") {
-    const pnpm = execSync("pnpm -v").toString().trim();
+  if (conf.npm === NPM.pnpm) {
+    const pnpm = execSync(cmd.pnpmV).toString().trim();
     execSync(
-      `pnpm pkg set packageManager="pnpm@${!pnpm.startsWith("v") ? pnpm : pnpm.slice(1)}"`,
+      format(
+        cmd.pkgSetPkgMgr,
+        NPM.pnpm,
+        NPM.pnpm,
+        !pnpm.startsWith("v") ? pnpm : pnpm.slice(1),
+      ),
       {
         stdio: "ignore",
         cwd,
@@ -137,50 +175,72 @@ const setPkgVer = (conf: Conf, cwd?: string) => {
 
 const setPkgVerMono = (conf: Conf) => {
   setPkgVer(conf);
-  if (fs.existsSync("backend")) {
-    setPkgVer(conf, "backend");
+  for (const type of meta.type.inMonos) {
+    if (fs.existsSync(type)) {
+      setPkgVer(conf, type);
+    }
   }
-  if (fs.existsSync("frontend")) {
-    setPkgVer(conf, "frontend");
-  }
-  if (fs.existsSync("mobile")) {
-    setPkgVer(conf, "mobile");
-  }
-  if (fs.existsSync("shared")) {
-    setPkgVer(conf, "shared");
+  if (fs.existsSync(meta.type.shared)) {
+    setPkgVer(conf, meta.type.shared);
   }
 };
 
 const setPkgBin = (conf: Conf) => {
-  const bin = !conf.name.includes("/") ? conf.name : conf.name.split("/").pop();
-  execSync(`${conf.npm} pkg set "bin.${bin}"="dist/index.js"`, {
-    stdio: "ignore",
-  });
+  execSync(
+    format(
+      cmd.pkgSetBin,
+      conf.npm,
+      !conf.name.includes("/") ? conf.name : conf.name.split("/").pop(),
+    ),
+    { stdio: "ignore" },
+  );
 };
 
 const createWorkspace = (conf: Conf) => {
   const workspace: {
     packages: string[];
     onlyBuiltDependencies: string[];
+    nodeLinker?: "hoisted";
   } = {
     packages: [],
     onlyBuiltDependencies: [],
   };
 
-  if (fs.existsSync("backend")) {
-    workspace.packages.push("backend");
+  for (const type of meta.type.inMonos) {
+    if (fs.existsSync(type)) {
+      workspace.packages.push(type);
+    }
   }
-  if (fs.existsSync("frontend")) {
-    workspace.packages.push("frontend");
+  if (fs.existsSync(meta.type.shared)) {
+    workspace.packages.push(meta.type.shared);
   }
-  if (fs.existsSync("mobile")) {
-    workspace.packages.push("mobile");
-  }
-  if (fs.existsSync("shared")) {
-    workspace.packages.push("shared");
-  }
+
   if (conf.backend === option.backend.nest) {
-    workspace.onlyBuiltDependencies.push("@nestjs/core");
+    for (const dep of template.onlyBuiltDeps.nest) {
+      workspace.onlyBuiltDependencies.push(dep);
+    }
+  }
+
+  if (
+    conf.frontend === option.frontend.next &&
+    fs.existsSync(`${option.type.frontend}/${template.pnpmWkspace}`)
+  ) {
+    fs.renameSync(
+      `${option.type.frontend}/${template.pnpmWkspace}`,
+      `${option.type.frontend}/${template.pnpmWkspace}${template.bak}`,
+    );
+    console.log(template.message.nextWkspaceRenamed);
+  }
+  if (
+    conf.mobile === option.mobile.expo &&
+    fs.existsSync(`${option.type.mobile}/${template.pnpmWkspace}`)
+  ) {
+    fs.renameSync(
+      `${option.type.mobile}/${template.pnpmWkspace}`,
+      `${option.type.mobile}/${template.pnpmWkspace}${template.bak}`,
+    );
+    console.log(template.message.expoWkspaceRenamed);
+    workspace.nodeLinker = "hoisted";
   }
 
   fs.writeFileSync("pnpm-workspace.yaml", Yaml.stringify(workspace));

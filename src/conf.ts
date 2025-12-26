@@ -38,7 +38,13 @@ export const option = {
   },
 } as const;
 
-type Option = typeof option;
+const type = {
+  inMonos: [option.type.backend, option.type.frontend, option.type.mobile],
+  selfCreateds: [option.type.frontend, option.type.mobile],
+  shared: "shared",
+  withMultiplePkgTmplts: [option.type.backend],
+} as const;
+
 type ConfFromOpt<T> = T extends object
   ? T[keyof T] extends object
     ? { [K in keyof T]: ConfFromOpt<T[K]> }
@@ -50,20 +56,41 @@ type RecursiveWritable<T> = T extends object
 type RecursivePartial<T> = T extends object
   ? { [K in keyof T]?: RecursivePartial<T[K]> }
   : T;
-type Conf0 = RecursiveWritable<ConfFromOpt<Option>>;
+type Conf0 = RecursiveWritable<ConfFromOpt<typeof option>>;
+export enum NPM {
+  npm = "npm",
+  pnpm = "pnpm",
+}
 export type Conf = {
   name: string;
   volta: boolean;
-  npm: "npm" | "pnpm";
+  npm: NPM;
 } & Pick<Conf0, "type" | "compulsory"> &
   RecursivePartial<Omit<Conf0, "type" | "compulsory">>;
 
-const flatOpt = (({ compulsory, optional, ...rest }) => ({
+export const optional = {
+  option: {
+    default: "default",
+    manual: "manual",
+  },
+  default: {
+    lint: option.optional.lint.eslint,
+    test: option.optional.test.jest,
+    git: option.optional.git.github,
+    cicd: option.optional.cicd.ghactions,
+    deploy: option.optional.deploy.render,
+    docker: option.optional.docker.docker,
+    orm: option.optional.orm.prisma,
+  },
+} as const;
+
+const flatOpt = (({ compulsory, optional: optConf, ...rest }) => ({
   ...rest,
   ...compulsory,
-  ...optional,
+  optional: optional.option,
+  ...optConf,
 }))(option);
-export type FlatOpt = typeof flatOpt;
+type FlatOpt = typeof flatOpt;
 
 export const message = {
   name: {
@@ -113,6 +140,12 @@ export const message = {
     q: "Builder?",
     rspack: "Rspack",
   },
+  optional: {
+    q: "Accept optional ones with defaults, or configure them one by one, or choose none of them?",
+    default:
+      "Accept defaults (ESLint, Jest, GitHub, GitHub Actions, Render.com, Docker, and Prisma if applicable)",
+    manual: "Configure manually",
+  },
   lint: {
     q: "Lint?",
     eslint: "ESLint",
@@ -141,31 +174,16 @@ export const message = {
     q: "ORM?",
     prisma: "Prisma",
   },
-  optional: {
-    q: "Accept optional ones with defaults, or configure them one by one, or choose none of them?",
-    default:
-      "Accept defaults (ESLint, Jest, GitHub, GitHub Actions, Render.com, Docker, and Prisma if applicable)",
-    manual: "Configure manually",
-  },
   opCanceled: "Operation cancelled.",
   pmUnsupported: "The tool can only support npm or pnpm for now.",
   pnpmForMono: "The tool can only support pnpm monorepo for now.",
-} as const;
-
-export const optional = {
-  option: {
-    default: "default",
-    manual: "manual",
-  },
-  default: {
-    lint: option.optional.lint.eslint,
-    test: option.optional.test.jest,
-    git: option.optional.git.github,
-    cicd: option.optional.cicd.ghactions,
-    deploy: option.optional.deploy.render,
-    docker: option.optional.docker.docker,
-    orm: option.optional.orm.prisma,
-  },
+  nextWkspaceRenamed:
+    "frontend/pnpm-workspace.yaml has been renamed frontend/pnpm-workspace.yaml.bak, please check the content and merge it into the root one.",
+  expoWkspaceRenamed:
+    'mobile/pnpm-workspace.yaml has been renamed mobile/pnpm-workspace.yaml.bak and "nodeLinker: hoisted" has been merged into the root one, please check whether there are other configurations to be merged into the root one.',
+  createVite: "create-vite ...",
+  createNext: "create-next-app ...",
+  createExpo: "create-expo-app ...",
 } as const;
 
 const none = {
@@ -174,12 +192,19 @@ const none = {
 } as const;
 
 export const prompt = {
+  name: {
+    message: message.name.q,
+    initialValue: message.name.initial,
+    validate: (value?: string) => (value ? undefined : message.name.validate),
+  },
   ...(Object.fromEntries(
     (Object.entries(flatOpt) as [keyof FlatOpt, FlatOpt[keyof FlatOpt]][])
       .filter(
         ([k, v]) =>
           typeof v === "object" &&
-          (Object.keys(v).length > 1 || k in option.optional),
+          (Object.keys(v).length > 1 ||
+            k in option.optional ||
+            k === "optional"),
       )
       .map(([k, v]) => [
         k,
@@ -187,12 +212,15 @@ export const prompt = {
           disable: false,
           selection: {
             message: message[k].q,
+            ...(k !== "optional"
+              ? {}
+              : { initialValue: optional.option.default }),
             options: [
               ...Object.values(v).map((e) => ({
                 value: e,
                 label: (message[k] as any)[e],
               })),
-              ...(!(k in option.optional) ? [] : [none]),
+              ...(!(k in option.optional || k === "optional") ? [] : [none]),
             ],
           },
         },
@@ -209,67 +237,78 @@ export const prompt = {
       };
     };
   }),
-  name: {
-    message: message.name.q,
-    initialValue: message.name.initial,
-    validate: (value?: string) => (value ? undefined : message.name.validate),
+  monorepo: Object.fromEntries(
+    type.inMonos
+      .filter((k) => k in flatOpt && typeof flatOpt[k] === "object")
+      .map((k) => [
+        k,
+        {
+          message: message[k].q,
+          options: [
+            ...Object.values(flatOpt[k]).map((e) => ({
+              value: e,
+              label: (message[k] as any)[e],
+            })),
+            none,
+          ],
+        },
+      ]),
+  ) as {
+    [K in (typeof type.inMonos)[number] & keyof FlatOpt]?: {
+      message: string;
+      options: {
+        value: FlatOpt[K][keyof FlatOpt[K]];
+        lable: string;
+      }[];
+    };
   },
-  monoBackend: {
-    message: message.backend.q,
-    options: [
-      ...Object.values(option.backend).map((e) => ({
-        value: e,
-        label: message.backend[e],
-      })),
-      none,
-    ],
-  },
-  monoFrontend: {
-    message: message.frontend.q,
-    options: [
-      ...Object.values(option.frontend).map((e) => ({
-        value: e,
-        label: message.frontend[e],
-      })),
-      none,
-    ],
-  },
-  monoMobile: {
-    message: message.mobile.q,
-    options: [
-      ...Object.values(option.mobile).map((e) => ({
-        value: e,
-        label: message.mobile[e],
-      })),
-      none,
-    ],
-  },
-  optional: {
-    message: message.optional.q,
-    initialValue: optional.option.default,
-    options: [
-      {
-        value: optional.option.default,
-        label: message.optional.default,
-      },
-      {
-        value: optional.option.manual,
-        label: message.optional.manual,
-      },
-      none,
-    ],
-  },
-};
+  message,
+} as const;
 
 export const template = {
   url: "https://raw.githubusercontent.com/bradhezh/prj-template/master",
   package: {
-    node: "package-node.json",
-    express: "package-express.json",
-    nest: "package-nest.json",
-    monorepo: "package-mono.json",
-    share: "package-share.json",
-    lib: "package-lib.json",
-    cli: "package-cli.json",
+    name: "package.json",
+    node: "package/package-node.json",
+    express: "package/package-express.json",
+    nest: "package/package-nest.json",
+    monorepo: "package/package-mono.json",
+    shared: "package/package-shared.json",
+    lib: "package/package-lib.json",
+    cli: "package/package-cli.json",
   },
+  pnpmWkspace: "pnpm-workspace.yaml",
+  onlyBuiltDeps: {
+    nest: ["@nestjs/core"],
+  },
+  bak: ".bak",
+  src: "src",
+  git: ".git",
+  message,
+} as const;
+
+export const cmd = {
+  voltaV: "volta -v",
+  nodeV: "node -v",
+  npmV: `%s -v`,
+  pnpmV: "pnpm -v",
+  createVite: "%s create vite %s --template react-ts",
+  createNext:
+    "%s create next-app %s --ts --no-react-compiler --no-src-dir -app --api --eslint --tailwind --skip-install --disable-git",
+  createExpo: "%s create expo-app %s --no-install",
+  pkgSetName: '%s pkg set name="%s"',
+  pkgSetVoltaNode: '%s pkg set "volta.node"="%s"',
+  pkgSetVoltaNpm: '%s pkg set "volta.%s"="%s"',
+  pkgSetPkgMgr: '%s pkg set packageManager="%s@%s"',
+  pkgSetBin: '%s pkg set "bin.%s"="dist/index.js"',
+} as const;
+
+export const meta = {
+  key: {
+    option: {
+      git: "git",
+      cicd: "cicd",
+    },
+  },
+  type,
 } as const;

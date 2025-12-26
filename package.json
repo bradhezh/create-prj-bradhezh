@@ -1,6 +1,6 @@
 {
   "name": "@bradhezh/create-prj",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "repository": "github:bradhezh/create-prj",
   "description": "",
   "main": "dist/index.js",

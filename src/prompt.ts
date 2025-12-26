@@ -1,10 +1,10 @@
 import p from "@clack/prompts";
 import { execSync } from "child_process";
 
-import { prompt, option, message, optional, Conf, FlatOpt } from "@/conf";
+import { prompt, option, optional, cmd, meta, NPM, Conf } from "@/conf";
 
 export const confFromUser = async () => {
-  const env = detectEvn();
+  const env = detectEnv();
   const conf: Conf = await init(env);
   await confType(conf);
   await confCompulsory(conf);
@@ -12,18 +12,18 @@ export const confFromUser = async () => {
   return conf;
 };
 
-const detectEvn = () => {
-  let npm: Conf["npm"];
-  if (process.env.npm_config_user_agent?.includes("pnpm")) {
-    npm = "pnpm";
-  } else if (process.env.npm_config_user_agent?.includes("npm")) {
-    npm = "npm";
+const detectEnv = () => {
+  let npm: NPM;
+  if (process.env.npm_config_user_agent?.includes(NPM.pnpm)) {
+    npm = NPM.pnpm;
+  } else if (process.env.npm_config_user_agent?.includes(NPM.npm)) {
+    npm = NPM.npm;
   } else {
-    throw new Error(message.pmUnsupported);
+    throw new Error(prompt.message.pmUnsupported);
   }
   let volta: boolean;
   try {
-    execSync("volta -v", { stdio: "ignore" });
+    execSync(cmd.voltaV, { stdio: "ignore" });
     volta = true;
   } catch {
     volta = false;
@@ -53,53 +53,62 @@ const init = async (env: Pick<Conf, "volta" | "npm">) => {
 
 const confType = async (conf: Conf) => {
   if (conf.type === option.type.monorepo) {
-    if (conf.npm !== "pnpm") {
-      throw new Error(message.pnpmForMono);
+    if (conf.npm !== NPM.pnpm) {
+      throw new Error(prompt.message.pnpmForMono);
     }
     const answer = await p.group(
-      {
-        backend: () => p.select(prompt.monoBackend),
-        frontend: () => p.select(prompt.monoFrontend),
-        mobile: () => p.select(prompt.monoMobile),
-      },
+      Object.fromEntries(
+        Object.entries(prompt.monorepo).map(([k, v]) => [k, () => p.select(v)]),
+      ),
       { onCancel },
     );
-    conf.backend = answer.backend;
-    conf.frontend = answer.frontend;
-    conf.mobile = answer.mobile;
+    for (const key in answer) {
+      (conf as any)[key] = answer[key];
+    }
   } else if (conf.type in option) {
-    const type = conf.type as keyof FlatOpt;
-    (conf as any)[type] = Object.values(option[type as keyof typeof option])[0];
-    if (type in prompt) {
+    (conf as any)[conf.type] = Object.values(
+      option[conf.type as keyof typeof option],
+    )[0];
+    if (conf.type in prompt) {
       const answer = await p.group(
-        { selection: () => p.select(prompt[type]!.selection) },
+        {
+          selection: () =>
+            p.select(
+              prompt[conf.type as keyof typeof option & keyof typeof prompt]!
+                .selection,
+            ),
+        },
         { onCancel },
       );
-      (conf as any)[type] = answer.selection;
+      (conf as any)[conf.type] = answer.selection;
     }
   }
 
   if (conf.backend === option.backend.nest) {
     conf.compulsory.typescript = option.compulsory.typescript.metadata;
-    prompt.typescript!.disable = true;
+    void (prompt.typescript && (prompt.typescript.disable = true));
   }
   if (
-    conf.type === option.type.frontend ||
-    conf.type === option.type.mobile ||
-    (conf.type === option.type.monorepo && !conf.backend)
+    (meta.type.selfCreateds as readonly Conf["type"][]).includes(conf.type) ||
+    (conf.type === option.type.monorepo &&
+      !meta.type.inMonos.filter(
+        (e) =>
+          conf[e] &&
+          !(meta.type.selfCreateds as readonly Conf["type"][]).includes(e),
+      ).length)
   ) {
     void (prompt.typescript && (prompt.typescript.disable = true));
     void (prompt.builder && (prompt.builder.disable = true));
-    prompt.lint!.disable = true;
-    prompt.test!.disable = true;
-    prompt.deploy!.disable = true;
-    prompt.docker!.disable = true;
+    void (prompt.lint && (prompt.lint.disable = true));
+    void (prompt.test && (prompt.test.disable = true));
+    void (prompt.deploy && (prompt.deploy.disable = true));
+    void (prompt.docker && (prompt.docker.disable = true));
   }
 };
 
 const confCompulsory = async (conf: Conf) => {
   for (const key in option.compulsory) {
-    const k = key as keyof FlatOpt;
+    const k = key as keyof typeof option.compulsory;
     if (k in prompt && !prompt[k]!.disable) {
       const answer = await p.group(
         { selection: () => p.select(prompt[k]!.selection) },
@@ -112,7 +121,7 @@ const confCompulsory = async (conf: Conf) => {
 
 const confOptional = async (conf: Conf) => {
   const optionalAnswer = await p.group(
-    { selection: () => p.select(prompt.optional) },
+    { selection: () => p.select(prompt.optional!.selection) },
     { onCancel },
   );
   if (optionalAnswer.selection === optional.option.default) {
@@ -129,19 +138,19 @@ const confOptional = async (conf: Conf) => {
   }
   if (optionalAnswer.selection === optional.option.manual) {
     for (const key in option.optional) {
-      const k = key as keyof FlatOpt;
+      const k = key as keyof typeof option.optional;
       if (!prompt[k]!.disable) {
         const answer = await p.group(
           { selection: () => p.select(prompt[k]!.selection) },
           { onCancel },
         );
         if (!answer.selection) {
-          if (k === "git") {
+          if (k === meta.key.option.git) {
             prompt.cicd!.disable = true;
             prompt.deploy!.disable = true;
             prompt.docker!.disable = true;
           }
-          if (k === "cicd") {
+          if (k === meta.key.option.cicd) {
             prompt.deploy!.disable = true;
             prompt.docker!.disable = true;
           }
@@ -157,6 +166,6 @@ const confOptional = async (conf: Conf) => {
 };
 
 const onCancel = () => {
-  p.cancel(message.opCanceled);
+  p.cancel(prompt.message.opCanceled);
   process.exit(0);
 };
