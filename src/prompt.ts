@@ -63,7 +63,7 @@ const confTypes = async (conf: Conf) => {
   }
 
   if (conf.backend?.framework === option.optional.backend.framework.nest) {
-    conf.typescript = option.typescript.metadata;
+    conf.typescript = option.typescript.decorator;
     void (prompt.typescript && (prompt.typescript.disable = true));
   }
   if (

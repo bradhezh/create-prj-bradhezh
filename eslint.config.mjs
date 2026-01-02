@@ -4,6 +4,7 @@ import ts from "typescript-eslint";
 import globals from "globals";
 
 const rules = {
+  "no-cond-assign": ["warn", "always"],
   eqeqeq: "warn",
   "@typescript-eslint/no-explicit-any": "warn",
   "@typescript-eslint/no-unsafe-member-access": "off",
@@ -12,10 +13,7 @@ const rules = {
   "@typescript-eslint/no-unsafe-assignment": "off",
   "@typescript-eslint/no-unused-vars": [
     "error",
-    {
-      argsIgnorePattern: "^_",
-      varsIgnorePattern: "^_",
-    },
+    { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
   ],
 };
 
@@ -30,15 +28,8 @@ export default defineConfig([
     files: ["src/**/*.ts"],
     extends: [js.configs.recommended, ...ts.configs.recommendedTypeChecked],
     languageOptions: {
-      ecmaVersion: 2023,
-      globals: {
-        ...globals.node,
-        ...globals.jest,
-      },
-      parserOptions: {
-        project: true,
-        tsconfigRootDir: import.meta.dirname,
-      },
+      globals: { ...globals.node, ...globals.jest },
+      parserOptions: { project: true, tsconfigRootDir: import.meta.dirname },
     },
     rules,
   },

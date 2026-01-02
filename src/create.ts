@@ -21,80 +21,96 @@ import type {
 const exec = promisify(execAsync);
 let volta: boolean | undefined;
 
-export const createDirs = async (conf: Conf, s: Spinner) => {
-  if (
-    conf.type !== option.type.monorepo &&
-    !allSelfCreated(conf, [conf.type])
-  ) {
-    await mkdir(template.src);
-    return;
+export const create = async (conf: Conf, s: Spinner) => {
+  for (const type of conf.type !== option.type.monorepo
+    ? [conf.type]
+    : (conf.monorepo!.types as unknown as Type[])) {
+    if (allSelfCreated(conf, [type])) {
+      await createSelf(conf, type, s);
+    } else {
+      await createType(conf, type as NonSelfCreatedType);
+    }
   }
-
   if (conf.type === option.type.monorepo) {
-    const types = conf.monorepo!.types as unknown as Type[];
-    for (const type of types.filter((e) => !allSelfCreated(conf, [e]))) {
-      await mkdir(`${type}/${template.src}`, { recursive: true });
-    }
-    if (types.length > 1) {
-      await mkdir(`${meta.type.shared}/${template.src}`, { recursive: true });
-    }
+    await createMono(conf, s);
   }
-
-  s.stop();
-  if (conf.frontend?.framework === option.optional.frontend.framework.vite) {
-    console.log(template.message.createVite);
-    const dir = conf.type !== option.type.monorepo ? "." : option.type.frontend;
-    execSync(format(cmd.createVite, conf.npm, dir), { stdio: "inherit" });
-    await setPkgVite(conf, dir);
-  } else if (
-    conf.frontend?.framework === option.optional.frontend.framework.next
-  ) {
-    console.log(template.message.createNext);
-    const dir = conf.type !== option.type.monorepo ? "." : option.type.frontend;
-    execSync(format(cmd.createNext, conf.npm, dir), { stdio: "inherit" });
-    await setPkgNext(conf, dir);
-  }
-  if (conf.mobile?.framework === option.optional.mobile.framework.expo) {
-    console.log(template.message.createExpo);
-    const dir = conf.type !== option.type.monorepo ? "." : option.type.mobile;
-    execSync(format(cmd.createExpo, conf.npm, dir), { stdio: "inherit" });
-    await setPkgExpo(conf, dir);
-    await rm(`${dir}/${template.git}`, { recursive: true, force: true });
-  }
-  s.start(template.message.proceed);
 };
 
-export const createPkgs = async (conf: Conf, s: Spinner) => {
-  if (allSelfCreated(conf, [conf.type])) {
+const createSelf = async (conf: Conf, type: Type, s: Spinner) => {
+  let created = false;
+  const dir = conf.type !== option.type.monorepo ? "." : type;
+  if (type === "frontend") {
+    if (conf.frontend!.framework === option.optional.frontend.framework.vite) {
+      p.log.info(template.message.createVite);
+      s.stop();
+      execSync(format(cmd.createVite, conf.npm, dir), { stdio: "inherit" });
+      s.start(template.message.proceed);
+      await setPkgVite(conf, dir);
+      created = true;
+    } else if (
+      conf.frontend!.framework === option.optional.frontend.framework.next
+    ) {
+      p.log.info(template.message.createNext);
+      s.stop();
+      execSync(format(cmd.createNext, conf.npm, dir), { stdio: "inherit" });
+      s.start(template.message.proceed);
+      await setPkgNext(conf, dir);
+      created = true;
+    }
+  } else if (type === "mobile") {
+    if (conf.mobile!.framework === option.optional.mobile.framework.expo) {
+      p.log.info(template.message.createExpo);
+      s.stop();
+      execSync(format(cmd.createExpo, conf.npm, dir), { stdio: "inherit" });
+      s.start(template.message.proceed);
+      await setPkgExpo(conf, dir);
+      await rm(`${dir}/${template.git}`, { recursive: true, force: true });
+      created = true;
+    }
+  }
+  if (!created) {
+    p.log.warn(format(template.message.noSelfCreateCmd, type));
     return;
   }
+  await setPkg(conf, type);
+  await setSelfCreatedToolChain(conf, type);
+};
 
-  if (conf.type !== option.type.monorepo) {
-    await createPkg(conf, conf.type as NonSelfCreatedType, ".");
-    return;
+const createType = async (conf: Conf, type: NonSelfCreatedType) => {
+  await mkdir(
+    conf.type !== option.type.monorepo
+      ? template.src
+      : `${type}/${template.src}`,
+    { recursive: true },
+  );
+  await createPkg(conf, type);
+  await setPkg(conf, type);
+  await createToolChain(conf, type);
+};
+
+const createMono = async (conf: Conf, s: Spinner) => {
+  if ((conf.monorepo!.types as unknown as Type[]).length > 1) {
+    await mkdir(`${meta.type.shared}/${template.src}`, { recursive: true });
+    const shared = await axios.get(
+      `${template.url}/${template.package.shared}`,
+      { responseType: "text" },
+    );
+    await writeFile(
+      `${meta.type.shared}/${template.package.name}`,
+      shared.data,
+    );
+    await setPkgVers(conf, meta.type.shared);
+    await createToolChainShared(conf);
   }
 
-  const types = conf.monorepo!.types as unknown as Type[];
-  for (const type of types.filter((e) => !allSelfCreated(conf, [e]))) {
-    await createPkg(conf, type as NonSelfCreatedType, type);
-  }
-  await createMonoPkg(conf);
+  const mono = await axios.get(monoPkgTmplt(conf), { responseType: "text" });
+  await writeFile(template.package.name, mono.data);
+  await setPkg(conf, option.type.monorepo);
   await createWkspace(conf, s);
 };
 
-export const setPkgs = async (conf: Conf) => {
-  await exec(format(cmd.setPkgName, conf.npm, conf.name));
-  await setPkgVers(conf);
-  if (conf.type === option.type.lib || conf.type === option.type.cli) {
-    await setPkgBin(conf);
-    return;
-  }
-  if (conf.type === option.type.monorepo) {
-    await setPkgVersMono(conf);
-  }
-};
-
-const createPkg = async (conf: Conf, type: NonSelfCreatedType, dir: string) => {
+const createPkg = async (conf: Conf, type: NonSelfCreatedType) => {
+  const dir = conf.type !== option.type.monorepo ? "." : type;
   if (!(meta.type.withMultiplePkgTmplts as readonly Type[]).includes(type)) {
     const response = await axios.get(
       `${template.url}/${template.package[type as WithSinglePkgTemplt]}`,
@@ -120,20 +136,119 @@ const createPkg = async (conf: Conf, type: NonSelfCreatedType, dir: string) => {
   );
 };
 
-const createMonoPkg = async (conf: Conf) => {
-  const mono = await axios.get(monoPkgTmplt(conf), { responseType: "text" });
-  await writeFile(template.package.name, mono.data);
+const setPkg = async (conf: Conf, type: Type) => {
+  await setPkgVers(
+    conf,
+    conf.type !== option.type.monorepo || type === option.type.monorepo
+      ? "."
+      : type,
+  );
+  if (conf.type !== option.type.monorepo || type === option.type.monorepo) {
+    await exec(format(cmd.setPkgName, conf.npm, conf.name));
+  }
+  if (type === option.type.lib || type === option.type.cli) {
+    await setPkgBin(conf);
+  }
+};
+
+const createToolChain = async (conf: Conf, type: Type) => {
+  await Promise.resolve({ conf, type });
+};
+
+const createToolChainShared = async (conf: Conf) => {
+  await Promise.resolve({ conf });
+};
+
+const setSelfCreatedToolChain = async (conf: Conf, type: Type) => {
+  // path aliases
+  await Promise.resolve({ conf, type });
+};
+
+const monoPkgTmplt = (conf: Conf) => {
+  const types = conf.monorepo!.types as unknown as Type[];
+  if (!types.includes(option.type.backend)) {
+    if (
+      types.includes(option.type.frontend) &&
+      types.includes(option.type.mobile)
+    ) {
+      return `${template.url}/${template.package.monoFeMobile}`;
+    }
+    return `${template.url}/${template.package.monorepo}`;
+  }
+  if (conf.frontend?.framework === option.optional.frontend.framework.next) {
+    if (!types.includes(option.type.mobile)) {
+      return `${template.url}/${template.package.monoBeNext}`;
+    }
+    return `${template.url}/${template.package.monoBeNextMobile}`;
+  }
+  if (types.includes(option.type.frontend)) {
+    if (!types.includes(option.type.mobile)) {
+      return `${template.url}/${template.package.monoBeFe}`;
+    }
+    return `${template.url}/${template.package.monoBeFeMobile}`;
+  }
+  if (types.includes(option.type.mobile)) {
+    return `${template.url}/${template.package.monoBeMobile}`;
+  }
+  return `${template.url}/${template.package.monorepo}`;
+};
+
+const createWkspace = async (conf: Conf, s: Spinner) => {
+  const workspace: {
+    packages: string[];
+    onlyBuiltDependencies: string[];
+    nodeLinker?: "hoisted";
+  } = { packages: [], onlyBuiltDependencies: [] };
+
+  const types = conf.monorepo!.types as unknown as Type[];
+  for (const type of types) {
+    workspace.packages.push(type);
+  }
+  if (types.length > 1) {
+    workspace.packages.push(meta.type.shared);
+  }
+
+  if (conf.backend?.framework === option.optional.backend.framework.nest) {
+    for (const dep of template.onlyBuiltDeps.nest) {
+      workspace.onlyBuiltDependencies.push(dep);
+    }
+  }
+
   if (
-    !(await access(meta.type.shared)
+    conf.frontend?.framework === option.optional.frontend.framework.next &&
+    (await access(`${option.type.frontend}/${template.pnpmWkspace}`)
       .then(() => true)
       .catch(() => false))
   ) {
-    return;
+    await rename(
+      `${option.type.frontend}/${template.pnpmWkspace}`,
+      `${option.type.frontend}/${template.pnpmWkspace}${template.bak}`,
+    );
+    s.stop();
+    p.log.warn(
+      wrapAnsi(template.message.nextWkspaceRenamed, template.message.noteWidth),
+    );
+    s.start(template.message.proceed);
   }
-  const shared = await axios.get(`${template.url}/${template.package.shared}`, {
-    responseType: "text",
-  });
-  await writeFile(`${meta.type.shared}/${template.package.name}`, shared.data);
+  if (
+    conf.mobile?.framework === option.optional.mobile.framework.expo &&
+    (await access(`${option.type.mobile}/${template.pnpmWkspace}`)
+      .then(() => true)
+      .catch(() => false))
+  ) {
+    workspace.nodeLinker = "hoisted";
+    await rename(
+      `${option.type.mobile}/${template.pnpmWkspace}`,
+      `${option.type.mobile}/${template.pnpmWkspace}${template.bak}`,
+    );
+    s.stop();
+    p.log.warn(
+      wrapAnsi(template.message.expoWkspaceRenamed, template.message.noteWidth),
+    );
+    s.start(template.message.proceed);
+  }
+
+  await writeFile("pnpm-workspace.yaml", Yaml.stringify(workspace));
 };
 
 const setPkgVite = async (conf: Conf, cwd: string) => {
@@ -176,7 +291,7 @@ const setPkgExpo = async (conf: Conf, cwd: string) => {
   );
 };
 
-const setPkgVers = async (conf: Conf, cwd?: string) => {
+const setPkgVers = async (conf: Conf, cwd: string) => {
   if (volta === undefined) {
     try {
       await exec(cmd.voltaV);
@@ -221,25 +336,6 @@ const setPkgVers = async (conf: Conf, cwd?: string) => {
   }
 };
 
-const setPkgVersMono = async (conf: Conf) => {
-  for (const type of conf.monorepo!.types as unknown as Type[]) {
-    if (
-      await access(`${type}/${template.package.name}`)
-        .then(() => true)
-        .catch(() => false)
-    ) {
-      await setPkgVers(conf, type);
-    }
-  }
-  if (
-    await access(`${meta.type.shared}/${template.package.name}`)
-      .then(() => true)
-      .catch(() => false)
-  ) {
-    await setPkgVers(conf, meta.type.shared);
-  }
-};
-
 const setPkgBin = async (conf: Conf) => {
   await exec(
     format(
@@ -248,101 +344,4 @@ const setPkgBin = async (conf: Conf) => {
       !conf.name.includes("/") ? conf.name : conf.name.split("/").pop(),
     ),
   );
-};
-
-const monoPkgTmplt = (conf: Conf) => {
-  const types = conf.monorepo!.types as unknown as Type[];
-  if (!types.includes(option.type.backend)) {
-    if (
-      types.includes(option.type.frontend) &&
-      types.includes(option.type.mobile)
-    ) {
-      return `${template.url}/${template.package.monoFeMobile}`;
-    }
-    return `${template.url}/${template.package.monorepo}`;
-  }
-  if (conf.frontend?.framework === option.optional.frontend.framework.next) {
-    if (!types.includes(option.type.mobile)) {
-      return `${template.url}/${template.package.monoBeNext}`;
-    }
-    return `${template.url}/${template.package.monoBeNextMobile}`;
-  }
-  if (types.includes(option.type.frontend)) {
-    if (!types.includes(option.type.mobile)) {
-      return `${template.url}/${template.package.monoBeFe}`;
-    }
-    return `${template.url}/${template.package.monoBeFeMobile}`;
-  }
-  if (types.includes(option.type.mobile)) {
-    return `${template.url}/${template.package.monoBeMobile}`;
-  }
-  return `${template.url}/${template.package.monorepo}`;
-};
-
-const createWkspace = async (conf: Conf, s: Spinner) => {
-  const workspace: {
-    packages: string[];
-    onlyBuiltDependencies: string[];
-    nodeLinker?: "hoisted";
-  } = { packages: [], onlyBuiltDependencies: [] };
-
-  for (const type of conf.monorepo!.types as unknown as Type[]) {
-    if (
-      await access(`${type}/${template.package.name}`)
-        .then(() => true)
-        .catch(() => false)
-    ) {
-      workspace.packages.push(type);
-    }
-  }
-  if (
-    await access(`${meta.type.shared}/${template.package.name}`)
-      .then(() => true)
-      .catch(() => false)
-  ) {
-    workspace.packages.push(meta.type.shared);
-  }
-
-  if (conf.backend?.framework === option.optional.backend.framework.nest) {
-    for (const dep of template.onlyBuiltDeps.nest) {
-      workspace.onlyBuiltDependencies.push(dep);
-    }
-  }
-
-  if (
-    conf.frontend?.framework === option.optional.frontend.framework.next &&
-    (await access(`${option.type.frontend}/${template.pnpmWkspace}`)
-      .then(() => true)
-      .catch(() => false))
-  ) {
-    await rename(
-      `${option.type.frontend}/${template.pnpmWkspace}`,
-      `${option.type.frontend}/${template.pnpmWkspace}${template.bak}`,
-    );
-    s.stop();
-    p.log.warn(
-      wrapAnsi(template.message.nextWkspaceRenamed, template.message.noteWidth),
-    );
-    s.start(template.message.proceed);
-  }
-  if (
-    conf.mobile?.framework === option.optional.mobile.framework.expo &&
-    (await access(`${option.type.mobile}/${template.pnpmWkspace}`)
-      .then(() => true)
-      .catch(() => false))
-  ) {
-    await rename(
-      `${option.type.mobile}/${template.pnpmWkspace}`,
-      `${option.type.mobile}/${template.pnpmWkspace}${template.bak}`,
-    );
-    s.stop();
-    p.log.warn(
-      wrapAnsi(template.message.expoWkspaceRenamed, template.message.noteWidth),
-    );
-    s.start(template.message.proceed);
-
-    workspace.nodeLinker = "hoisted";
-  }
-
-  await writeFile("pnpm-workspace.yaml", Yaml.stringify(workspace));
 };

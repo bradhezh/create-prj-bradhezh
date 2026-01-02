@@ -22,14 +22,7 @@ export default defineConfig({
   externals: [nodeExternals() as ExternalItem],
   externalsType: "commonjs",
 
-  module: {
-    rules: [
-      {
-        test: /\.ts$/,
-        use: { loader: "builtin:swc-loader" },
-      },
-    ],
-  },
+  module: { rules: [{ test: /\.ts$/, use: { loader: "builtin:swc-loader" } }] },
 
   devServer: { devMiddleware: { writeToDisk: true } },
 

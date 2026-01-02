@@ -13,7 +13,6 @@ export const option = {
   typescript: {
     nodecorator: "nodecorator",
     decorator: "decorator",
-    metadata: "metadata",
   },
   builder: { rspack: "rspack" },
   optional: {
@@ -146,8 +145,7 @@ export const message = {
   typescript: {
     q: "TypeScript decorator?",
     nodecorator: "No decorator",
-    decorator: "Decorator",
-    metadata: "Decorator with emitDecoratorMetadata",
+    decorator: "Decorator with emitDecoratorMetadata",
   },
   builder: { q: "Builder?", rspack: "Rspack" },
   backend: {
@@ -192,6 +190,7 @@ export const message = {
   createVite: "create-vite ...",
   createNext: "create-next-app ...",
   createExpo: "create-expo-app ...",
+  noSelfCreateCmd: "No CLI for creation of %d.",
   noTmplt: "No template for %s.",
   nextWkspaceRenamed:
     "frontend/pnpm-workspace.yaml has been renamed frontend/pnpm-workspace.yaml.bak, please check the content and merge it into the root one.",

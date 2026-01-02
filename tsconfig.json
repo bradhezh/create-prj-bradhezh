@@ -15,11 +15,9 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true,
-    "experimentalDecorators": true,
-    "emitDecoratorMetadata": true,
     "noEmit": true,
     "baseUrl": ".",
-    "paths": { "@/*": ["src/*"] }
+    "paths": { "@/*": ["src/*"] },
   },
-  "include": ["src"]
+  "include": ["src"],
 }

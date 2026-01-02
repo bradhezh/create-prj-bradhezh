@@ -3,7 +3,7 @@ import p from "@clack/prompts";
 
 import { message } from "@/conf";
 import { confFromUser } from "@/prompt";
-import { createDirs, createPkgs, setPkgs } from "@/create";
+import { create } from "@/create";
 
 void (async () => {
   if ((await readdir(process.cwd())).length) {
@@ -13,8 +13,6 @@ void (async () => {
   const conf = await confFromUser();
   const s = p.spinner();
   s.start(message.createPrj);
-  await createDirs(conf, s);
-  await createPkgs(conf, s);
-  await setPkgs(conf);
+  await create(conf, s);
   s.stop(message.prjCreated);
 })();
