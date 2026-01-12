@@ -1,4 +1,5 @@
 import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
 import axios from "axios";
 import Yaml from "yaml";
 import { format } from "node:util";
@@ -17,11 +18,10 @@ const run = async (conf: Conf) => {
   }
   const data = (await axios.get(template, { responseType: "text" })).data;
   if (conf.monorepo!.types.length > 1) {
-    const shared = meta.system.type.shared;
-    await mkdir(shared);
-    await writeFile(`${shared}/${pkg}`, data);
-    await setPkgName(conf, shared, shared);
-    await setPkgVers(conf, shared);
+    await mkdir(meta.system.type.shared);
+    await writeFile(path.join(meta.system.type.shared, pkg), data);
+    await setPkgName(conf, meta.system.type.shared, meta.system.type.shared);
+    await setPkgVers(conf, meta.system.type.shared);
   }
   await writeFile(pkg, data);
   await setPkgName(conf, conf.monorepo!.name);

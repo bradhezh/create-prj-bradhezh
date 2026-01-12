@@ -291,7 +291,7 @@ const hintDefOpts = (defOpts: Option[]) => {
     p.log.info(
       format(
         message.optional.options.hint,
-        options.optional.map((e) => e.name).join(),
+        options.optional.map((e) => e.label).join(", "),
       ),
     );
     return;
@@ -299,7 +299,7 @@ const hintDefOpts = (defOpts: Option[]) => {
   p.log.info(
     format(
       message.optional.defaults.hint,
-      defOpts.map((e) => e.values[0].name).join(),
+      defOpts.map((e) => `${e.label}:${e.values[0].label}`).join(", "),
     ),
   );
 };
