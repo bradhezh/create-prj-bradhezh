@@ -2,13 +2,15 @@ import p from "@clack/prompts";
 import path from "node:path";
 import { format } from "node:util";
 
-import { options, meta, NPM } from "@/registry";
-import type {
+import {
+  options,
+  meta,
+  NPM,
   Conf,
-  Category,
+  IPlugin,
   Option,
   Value,
-  IPlugin,
+  Category,
   PlugType,
 } from "@/registry";
 import { monorepo } from "@/monorepo";
@@ -19,12 +21,6 @@ export const plugins: {
   option: { [K in Category]: IPlugin[] };
   value: IPlugin[];
 } = { type: [], option: { type: [], compulsory: [], optional: [] }, value: [] };
-
-const optional = {
-  default: { value: "default", label: "Accept defaults" },
-  manual: { value: "manual", label: "Configure manually" },
-  none: { value: undefined, label: "None" },
-} as const;
 
 export const config = async () => {
   const conf: Conf = await init();
@@ -47,24 +43,12 @@ const init = async () => {
   } else {
     throw new Error(message.pmUnsupported);
   }
-  const answer = await p.group(
-    {
-      type: () =>
-        p.select({
-          message: message.type.label,
-          options: [
-            ...options.type.map((e) => ({ value: e, label: e.label })),
-            { value: monorepo, label: monorepo.label },
-          ],
-        }),
-    },
-    { onCancel },
-  );
-  if (answer.type.name === monorepo.name && npm !== NPM.pnpm) {
+  const { type } = await typePrompt();
+  if (type.name === monorepo.name && npm !== NPM.pnpm) {
     throw new Error(message.pnpmRequired);
   }
-  void (answer.type.plugin && plugins.type.push(answer.type.plugin));
-  return { npm, type: answer.type.name };
+  void (type.plugin && plugins.type.push(type.plugin));
+  return { npm, type: type.name };
 };
 
 const confTypes = async (conf: Conf) => {
@@ -72,30 +56,9 @@ const confTypes = async (conf: Conf) => {
   if (conf.type !== monorepo.name) {
     types.push(conf.type);
   } else {
-    const answer = await p.group(
-      {
-        name: () =>
-          p.text({
-            message: message.monorepo.name.label,
-            initialValue: path.basename(process.cwd()),
-            validate: (value?: string) =>
-              value ? undefined : message.validate,
-          }),
-        types: () =>
-          p.multiselect({
-            message: message.monorepo.types.label,
-            options: options.type.map((e) => ({ value: e, label: e.label })),
-          }),
-      },
-      { onCancel },
-    );
-    plugins.type.push(
-      ...answer.types.filter((e) => e.plugin).map((e) => e.plugin!),
-    );
-    conf.monorepo = {
-      name: answer.name,
-      types: answer.types.map((e) => e.name),
-    };
+    const { name, types: types0 } = await monoPrompt();
+    plugins.type.push(...types0.filter((e) => e.plugin).map((e) => e.plugin!));
+    conf.monorepo = { name, types: types0.map((e) => e.name) };
     types.push(...conf.monorepo.types);
   }
 
@@ -112,28 +75,193 @@ const confTypes = async (conf: Conf) => {
   }
 };
 
+const optional = {
+  default: { value: "default", label: "Accept defaults" },
+  manual: { value: "manual", label: "Configure manually" },
+  none: { value: undefined, label: "None" },
+} as const;
+type None = typeof optional.none;
+
+const confOptions = async (
+  conf: Conf,
+  opts: Option[],
+  category: Category,
+  type?: string,
+  typeLabel?: string,
+) => {
+  if (category === meta.system.option.category.type && !(type && typeLabel)) {
+    throw new Error(message.typeRequired);
+  }
+  const arg = optionPromptArg(conf, category, type, typeLabel);
+  const conf0 = (
+    category !== meta.system.option.category.type ? conf : conf[type!]
+  ) as Record<string, string | string[]>;
+  for (const opt of opts) {
+    const answer = await optionPrompt(opt, arg);
+    if (answer[opt.name] === optional.none.value) {
+      continue;
+    }
+    setOptionValues(conf0, opt, category, answer);
+  }
+};
+
+type Conf0 = Record<string, string | string[]>;
+type Answer = {
+  [x: string]: string | Value | Value[];
+};
+
+const setOptionValues = (
+  conf: Conf0,
+  option: Option,
+  category: Category,
+  answer: Answer,
+) => {
+  void (option.plugin && plugins.option[category].push(option.plugin));
+  if (!option.values.length) {
+    conf[option.name] = answer[option.name] as string;
+    return;
+  }
+  if (!option.multiple) {
+    const value = answer[option.name] as Value;
+    void (value.plugin && plugins.value.push(value.plugin));
+    conf[option.name] = value.name;
+    return;
+  }
+  const values = answer[option.name] as Value[];
+  plugins.value.push(...values.filter((e) => e.plugin).map((e) => e.plugin!));
+  conf[option.name] = values.map((e) => e.name);
+};
+
 const confOptional = async (conf: Conf) => {
   if (!options.optional.length) {
     return;
   }
   const defOpts = options.optional.filter((e) => e.values.length);
-  if (!defOpts.length) {
-    p.log.info(
-      format(
-        message.optional.options.hint,
-        options.optional.map((e) => e.name).join(),
-      ),
-    );
-  } else {
-    p.log.info(
-      format(
-        message.optional.defaults.hint,
-        defOpts.map((e) => e.values[0].name).join(),
-      ),
-    );
+  hintDefOpts(defOpts);
+  const { optional: optl } = await optionalPrompt(defOpts);
+  if (optl === optional.none.value) {
+    return;
   }
+  if (optl === optional.default.value) {
+    for (const opt of defOpts) {
+      void (opt.plugin && plugins.option.optional.push(opt.plugin));
+      const value = opt.values[0];
+      void (value.plugin && plugins.value.push(value.plugin));
+      conf[opt.name] = !opt.multiple ? value.name : [value.name];
+    }
+    return;
+  }
+  await confOptions(
+    conf,
+    options.optional,
+    meta.system.option.category.optional,
+  );
+};
 
-  const answer = await p.group(
+const typePrompt = () => {
+  return p.group(
+    {
+      type: () =>
+        p.select({
+          message: message.type.label,
+          options: [
+            ...options.type.map((e) => ({ value: e, label: e.label })),
+            { value: monorepo, label: monorepo.label },
+          ],
+        }),
+    },
+    { onCancel },
+  );
+};
+
+const monoPrompt = () => {
+  return p.group(
+    {
+      name: () =>
+        p.text({
+          message: message.monorepo.name.label,
+          initialValue: path.basename(process.cwd()),
+          validate: (value?: string) => (value ? undefined : message.validate),
+        }),
+      types: () =>
+        p.multiselect({
+          message: message.monorepo.types.label,
+          options: options.type.map((e) => ({ value: e, label: e.label })),
+        }),
+    },
+    { onCancel },
+  );
+};
+
+type OptionPromptParam = {
+  label: string;
+  iniName: string;
+  none: None[];
+};
+
+const optionPromptArg = (
+  conf: Conf,
+  category: Category,
+  type?: string,
+  typeLabel?: string,
+) => {
+  return {
+    label:
+      category !== meta.system.option.category.type ? "" : `${typeLabel} | `,
+    iniName:
+      category !== meta.system.option.category.type
+        ? ""
+        : conf.type === monorepo.name
+          ? type!
+          : path.basename(process.cwd()),
+    none:
+      category !== meta.system.option.category.optional
+        ? []
+        : [{ value: optional.none.value, label: optional.none.label }],
+  };
+};
+
+const optionPrompt = (
+  option: Option,
+  { label, iniName, none }: OptionPromptParam,
+) => {
+  return p.group(
+    {
+      [option.name]: () =>
+        !option.values.length
+          ? p.text({
+              message: `${label}${option.label}`,
+              initialValue:
+                option.initial ??
+                (option.name !== meta.plugin.option.type.common.name
+                  ? ""
+                  : iniName),
+              validate: option.optional
+                ? undefined
+                : (value?: string) => (value ? undefined : message.validate),
+            })
+          : !option.multiple
+            ? p.select({
+                message: `${label}${option.label}`,
+                options: [
+                  ...option.values.map((e) => ({ value: e, label: e.label })),
+                  ...none,
+                ],
+              })
+            : p.multiselect({
+                message: `${label}${option.label}`,
+                options: option.values.map((e) => ({
+                  value: e,
+                  label: e.label,
+                })),
+              }),
+    },
+    { onCancel },
+  );
+};
+
+const optionalPrompt = (defOpts: Option[]) => {
+  return p.group(
     {
       optional: () =>
         p.select({
@@ -156,109 +284,24 @@ const confOptional = async (conf: Conf) => {
     },
     { onCancel },
   );
-  if (answer.optional === optional.none.value) {
-    return;
-  }
-  if (answer.optional === optional.default.value) {
-    for (const opt of defOpts) {
-      void (opt.plugin && plugins.option.optional.push(opt.plugin));
-      const value = opt.values[0];
-      void (value.plugin && plugins.value.push(value.plugin));
-      conf[opt.name] = !opt.multiple ? value.name : [value.name];
-    }
-    return;
-  }
-  await confOptions(
-    conf,
-    options.optional,
-    meta.system.option.category.optional,
-  );
 };
 
-const confOptions = async (
-  conf: Conf,
-  opts: Option[],
-  category: Category,
-  type?: string,
-  typeLabel?: string,
-) => {
-  if (category === meta.system.option.category.type && !(type && typeLabel)) {
-    throw new Error(message.typeRequired);
-  }
-  const conf0 = (
-    category !== meta.system.option.category.type ? conf : conf[type!]
-  ) as Record<string, string | string[]>;
-  for (const opt of opts) {
-    const answer = await p.group(
-      {
-        [opt.name]: () =>
-          !opt.values.length
-            ? p.text({
-                message:
-                  category !== meta.system.option.category.type
-                    ? opt.label
-                    : `${typeLabel} | ${opt.label}`,
-                initialValue:
-                  opt.initial ??
-                  (category !== meta.system.option.category.type ||
-                  opt.name !== meta.plugin.option.type.common.name
-                    ? undefined
-                    : conf.type === monorepo.name
-                      ? type
-                      : path.basename(process.cwd())),
-                validate: opt.optional
-                  ? undefined
-                  : (value?: string) => (value ? undefined : message.validate),
-              })
-            : !opt.multiple
-              ? p.select({
-                  message:
-                    category !== meta.system.option.category.type
-                      ? opt.label
-                      : `${typeLabel} | ${opt.label}`,
-                  options: [
-                    ...opt.values.map((e) => ({ value: e, label: e.label })),
-                    ...(category !== meta.system.option.category.optional
-                      ? []
-                      : [
-                          {
-                            value: optional.none.value,
-                            label: optional.none.label,
-                          },
-                        ]),
-                  ],
-                })
-              : p.multiselect({
-                  message:
-                    category !== meta.system.option.category.type
-                      ? opt.label
-                      : `${typeLabel} | ${opt.label}`,
-                  options: opt.values.map((e) => ({
-                    value: e,
-                    label: e.label,
-                  })),
-                }),
-      },
-      { onCancel },
+const hintDefOpts = (defOpts: Option[]) => {
+  if (!defOpts.length) {
+    p.log.info(
+      format(
+        message.optional.options.hint,
+        options.optional.map((e) => e.name).join(),
+      ),
     );
-    if (answer[opt.name] === optional.none.value) {
-      continue;
-    }
-    void (opt.plugin && plugins.option[category].push(opt.plugin));
-    if (!opt.values.length) {
-      conf0[opt.name] = answer[opt.name] as string;
-    } else if (!opt.multiple) {
-      const value = answer[opt.name] as Value;
-      void (value.plugin && plugins.value.push(value.plugin));
-      conf0[opt.name] = value.name;
-    } else {
-      const values = answer[opt.name] as Value[];
-      plugins.value.push(
-        ...values.filter((e) => e.plugin).map((e) => e.plugin!),
-      );
-      conf0[opt.name] = values.map((e) => e.name);
-    }
+    return;
   }
+  p.log.info(
+    format(
+      message.optional.defaults.hint,
+      defOpts.map((e) => e.values[0].name).join(),
+    ),
+  );
 };
 
 const onCancel = () => {

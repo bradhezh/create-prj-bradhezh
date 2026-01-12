@@ -118,7 +118,7 @@ export const regOption = (
   category: Category,
   type?: string,
 ) => {
-  const opts = getOptions(option.name, category, type);
+  const opts = getOptions(category, type, option.name);
   if (opts.find((e) => e.name === option.name)) {
     throw new Error(message.optionExist);
   }
@@ -134,7 +134,7 @@ export const useOption = (
   optional?: boolean,
   initial?: string,
 ) => {
-  const opts = getOptions(name, category, type);
+  const opts = getOptions(category, type, name);
   if (!opts.find((e) => e.name === name)) {
     opts.push({ name, label, values: [], multiple, optional, initial });
   }
@@ -161,25 +161,28 @@ export const regValue = (value: Value, option: string, type?: string) => {
   opt.values.push(value);
 };
 
-const getOptions = (name: string, category: Category, type?: string) => {
-  if (category === meta.system.option.category.type && !type) {
-    throw new Error(message.typeRequired);
-  }
+const getOptions = (category: Category, type?: string, option?: string) => {
   if (category === meta.system.option.category.type) {
+    if (!type) {
+      throw new Error(message.typeRequired);
+    }
     const type0 = options.type.find((e) => e.name === type);
     if (!type0) {
       throw new Error(message.typeNotExist);
     }
     return type0.options;
   }
-  if (Object.keys(sysConfKey).includes(name)) {
+  if (!option) {
+    throw new Error(message.optionRequired);
+  }
+  if (Object.keys(sysConfKey).includes(option)) {
     throw new Error(message.sysConfKey);
   }
   if (
     (category === meta.system.option.category.compulsory &&
-      options.optional.find((e) => e.name === name)) ||
+      options.optional.find((e) => e.name === option)) ||
     (category === meta.system.option.category.optional &&
-      options.compulsory.find((e) => e.name === name))
+      options.compulsory.find((e) => e.name === option))
   ) {
     throw new Error(message.optionConflict);
   }

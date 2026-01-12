@@ -14,10 +14,15 @@ export const command = {
   setPkgVoltaNode: '%s pkg set "volta.node"="%s"',
   setPkgVoltaNpm: '%s pkg set "volta.%s"="%s"',
   setPkgPkgMgr: '%s pkg set packageManager="%s@%s"',
-  setPkgBin: '%s pkg set "bin.%s"="dist/index.js"',
   setPkgScripts: '%s pkg set "scripts.%s"="%s"',
+  setPkgDeps: '%s pkg set "dependencies.%s"="%s"',
   setPkgDevDeps: '%s pkg set "devDependencies.%s"="%s"',
+  setPkgBin: '%s pkg set "bin.%s"="%s"',
 } as const;
+
+export const setPkgName = async (conf: Conf, name: string, cwd?: string) => {
+  await exec(format(command.setPkgName, conf.npm, name), { cwd });
+};
 
 let volta: boolean | undefined;
 
@@ -64,4 +69,48 @@ export const setPkgVers = async (conf: Conf, cwd?: string) => {
       { cwd },
     );
   }
+};
+
+export const setPkgScript = async (
+  conf: Conf,
+  name: string,
+  script: string,
+  cwd?: string,
+) => {
+  await exec(format(command.setPkgScripts, conf.npm, name, script), { cwd });
+};
+
+export const setPkgDep = async (
+  conf: Conf,
+  name: string,
+  version: string,
+  cwd?: string,
+) => {
+  await exec(format(command.setPkgDeps, conf.npm, name, version), { cwd });
+};
+
+export const setPkgDevDep = async (
+  conf: Conf,
+  name: string,
+  version: string,
+  cwd?: string,
+) => {
+  await exec(format(command.setPkgDevDeps, conf.npm, name, version), { cwd });
+};
+
+export const setPkgBin = async (
+  conf: Conf,
+  name: string,
+  cwd?: string,
+  script?: string,
+) => {
+  await exec(
+    format(
+      command.setPkgBin,
+      conf.npm,
+      !name.includes("/") ? name : name.split("/").pop(),
+      script ?? "dist/index.js",
+    ),
+    { cwd },
+  );
 };
