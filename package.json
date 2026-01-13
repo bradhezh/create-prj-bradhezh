@@ -22,6 +22,7 @@
   "dependencies": {
     "@clack/prompts": "^0.11.0",
     "axios": "^1.13.2",
+    "comment-json": "^4.5.1",
     "wrap-ansi": "^9.0.2",
     "yaml": "^2.8.2"
   },

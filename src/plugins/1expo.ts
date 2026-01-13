@@ -1,10 +1,16 @@
 import { execSync } from "node:child_process";
 import { rm } from "node:fs/promises";
+import path from "node:path";
 import p from "@clack/prompts";
 import { format } from "node:util";
 
 import { meta, useType, useOption, regValue, Conf, Spinner } from "@/registry";
-import { setPkgName, setPkgVers, setPkgScript } from "@/command";
+import {
+  setPkgName,
+  setPkgVers,
+  setPkgScript,
+  setMonoPathAlias,
+} from "@/command";
 import { message } from "@/message";
 
 useType(meta.plugin.type.mobile, "Mobile");
@@ -34,6 +40,8 @@ const script = {
   },
 } as const;
 
+const git = ".git" as const;
+
 const run = async (conf: Conf, s: Spinner) => {
   const cwd =
     conf.type !== meta.system.type.monorepo ? "." : conf.mobile!.name!;
@@ -42,11 +50,14 @@ const run = async (conf: Conf, s: Spinner) => {
   s.stop();
   execSync(cmd, { stdio: "inherit" });
   s.start(message.proceed);
-  await rm(`${cwd}/.git`, { recursive: true, force: true });
+  await rm(path.join(cwd, git), { recursive: true, force: true });
   await setPkgName(conf, conf.mobile!.name!, cwd);
   await setPkgVers(conf, cwd);
   await setPkgScript(conf, script.build.name, script.build.script, cwd);
   await setPkgScript(conf, script.dev.name, script.dev.script, cwd);
+  if (conf.type === meta.system.type.monorepo) {
+    await setMonoPathAlias(conf.mobile!.name!);
+  }
 };
 
 regValue(

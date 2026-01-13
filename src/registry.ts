@@ -14,8 +14,8 @@ export const meta = {
       type: {
         common: { name: "name" },
         node: {},
-        cli: { registry: "registry" },
-        lib: { registry: "registry" },
+        cli: {},
+        lib: {},
         backend: { framework: "framework" },
         frontend: { framework: "framework" },
         mobile: { framework: "framework" },

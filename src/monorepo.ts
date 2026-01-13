@@ -1,5 +1,4 @@
 import { mkdir, writeFile } from "node:fs/promises";
-import path from "node:path";
 import axios from "axios";
 import Yaml from "yaml";
 import { format } from "node:util";
@@ -7,23 +6,21 @@ import { format } from "node:util";
 import { meta, Conf, PlugType } from "@/registry";
 import { setPkgName, setPkgVers, setPkgScript } from "@/command";
 
-const template =
-  "https://raw.githubusercontent.com/bradhezh/prj-template/master/package/package.json" as const;
-const pkg = "package.json" as const;
+const template = {
+  url: "https://raw.githubusercontent.com/bradhezh/prj-template/master/type/monorepo/package.json",
+  name: "package.json",
+} as const;
+
 const workspace = "pnpm-workspace.yaml" as const;
 
 const run = async (conf: Conf) => {
   for (const type of conf.monorepo!.types) {
     await mkdir(conf[type as PlugType]?.name ?? type);
   }
-  const data = (await axios.get(template, { responseType: "text" })).data;
-  if (conf.monorepo!.types.length > 1) {
-    await mkdir(meta.system.type.shared);
-    await writeFile(path.join(meta.system.type.shared, pkg), data);
-    await setPkgName(conf, meta.system.type.shared, meta.system.type.shared);
-    await setPkgVers(conf, meta.system.type.shared);
-  }
-  await writeFile(pkg, data);
+  await writeFile(
+    template.name,
+    (await axios.get(template.url, { responseType: "text" })).data,
+  );
   await setPkgName(conf, conf.monorepo!.name);
   await setPkgVers(conf);
   await setPkgScripts(conf);
@@ -171,9 +168,6 @@ const createWkspace = async (conf: Conf) => {
   const packages: string[] = [];
   for (const type of conf.monorepo!.types) {
     packages.push(conf[type as PlugType]?.name ?? type);
-  }
-  if (conf.monorepo!.types.length > 1) {
-    packages.push(meta.system.type.shared);
   }
   await writeFile(workspace, Yaml.stringify({ packages }));
 };

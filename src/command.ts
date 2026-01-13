@@ -1,5 +1,8 @@
 import { exec as execAsync } from "node:child_process";
 import { promisify, format } from "node:util";
+import { readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+import Json from "comment-json";
 
 import { Conf, NPM } from "@/registry";
 
@@ -113,4 +116,25 @@ export const setPkgBin = async (
     ),
     { cwd },
   );
+};
+
+const tsconfig = "tsconfig.json" as const;
+
+const pathAlias = {
+  "@/*": ["%s/src/*"],
+  "@shared/*": ["shared/src/*"],
+};
+
+export const setMonoPathAlias = async (cwd: string) => {
+  const file = path.join(cwd, tsconfig);
+  pathAlias["@/*"][0] = format(pathAlias["@/*"][0], cwd);
+  const doc = Json.parse(await readFile(file, "utf8")) as any;
+  void (!doc.compilerOptions && (doc.compilerOptions = {}));
+  doc.compilerOptions.baseUrl = "..";
+  doc.compilerOptions.paths = pathAlias;
+  const text = Json.stringify(doc, null, 2).replace(
+    /\[\s+"([^"]+)"\s+\]/g,
+    '["$1"]',
+  );
+  await writeFile(file, text);
 };

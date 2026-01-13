@@ -12,27 +12,6 @@ const exec = promisify(execAsync);
 
 useOption(meta.plugin.option.git, "Git", meta.system.option.category.optional);
 
-const command = {
-  git: "git --version",
-  init: "git init",
-  add: "git add .",
-  ciInit: 'git commit -m "init"',
-  ciCodeowner: 'git commit -m "CODEOWNERS added"',
-  gh: "gh --version",
-  auth: "gh auth status",
-  user: "gh api user --jq .login",
-  login: "gh auth login",
-  loginPubRule: 'gh auth login --scopes "admin:repo_hook,repo"',
-  refresh: "gh auth refresh --scopes admin:repo_hook",
-  createGh: "gh repo create %s --%s",
-  rename: "git branch -M master",
-  remote: "git remote add origin https://github.com/%s/%s.git",
-  pushu: "git push -u origin master",
-  push: "git push",
-  pubRule:
-    "gh api --method PUT /repos/%s/%s/branches/master/protection --input -",
-} as const;
-
 const message = {
   ...msg,
   visibility: { label: "Git repository visibility" },
@@ -44,9 +23,10 @@ const message = {
     'no "admin:repo_hook" selected, no branch protection rules will be set.',
 } as const;
 
-const template =
-  "https://raw.githubusercontent.com/bradhezh/prj-template/master/git/gitignore" as const;
-const gitignore = ".gitignore" as const;
+const template = {
+  url: "https://raw.githubusercontent.com/bradhezh/prj-template/master/git/gitignore",
+  name: ".gitignore",
+} as const;
 
 const run = async (conf: Conf, s: Spinner) => {
   if (!(await checkGit())) {
@@ -54,8 +34,8 @@ const run = async (conf: Conf, s: Spinner) => {
     return;
   }
   await writeFile(
-    gitignore,
-    (await axios.get(template, { responseType: "text" })).data,
+    template.name,
+    (await axios.get(template.url, { responseType: "text" })).data,
   );
   await createGit();
   if (!(await checkGh())) {
@@ -103,6 +83,27 @@ const visPrompt = () => {
     { onCancel },
   );
 };
+
+const command = {
+  git: "git --version",
+  init: "git init",
+  add: "git add .",
+  ciInit: 'git commit -m "init"',
+  ciCodeowner: 'git commit -m "CODEOWNERS added"',
+  gh: "gh --version",
+  auth: "gh auth status",
+  user: "gh api user --jq .login",
+  login: "gh auth login",
+  loginPubRule: 'gh auth login --scopes "admin:repo_hook,repo"',
+  refresh: "gh auth refresh --scopes admin:repo_hook",
+  createGh: "gh repo create %s --%s",
+  rename: "git branch -M master",
+  remote: "git remote add origin https://github.com/%s/%s.git",
+  pushu: "git push -u origin master",
+  push: "git push",
+  pubRule:
+    "gh api --method PUT /repos/%s/%s/branches/master/protection --input -",
+} as const;
 
 const checkGit = async () => {
   try {
