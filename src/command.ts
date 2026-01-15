@@ -30,14 +30,12 @@ export const setPkgName = async (npm: NPM, name: string, cwd?: string) => {
 let volta: boolean | undefined;
 
 export const setPkgVers = async (npm: NPM, cwd?: string) => {
-  if (volta === undefined) {
-    try {
-      await exec(command.volta);
-      volta = true;
-    } catch {
-      volta = false;
-    }
-  }
+  void (
+    volta !== undefined ||
+    (volta = await exec(command.volta)
+      .then(() => true)
+      .catch(() => false))
+  );
   if (volta) {
     const node = (await exec(command.node)).stdout.trim();
     await exec(
@@ -129,7 +127,7 @@ export const setMonoPathAlias = async (cwd: string) => {
   const file = path.join(cwd, tsconfig);
   pathAlias["@/*"][0] = format(pathAlias["@/*"][0], cwd);
   const doc = Json.parse(await readFile(file, "utf8")) as any;
-  void (!doc.compilerOptions && (doc.compilerOptions = {}));
+  void (doc.compilerOptions || (doc.compilerOptions = {}));
   doc.compilerOptions.baseUrl = "..";
   doc.compilerOptions.paths = pathAlias;
   const text = Json.stringify(doc, null, 2).replace(

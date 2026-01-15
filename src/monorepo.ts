@@ -40,6 +40,7 @@ export const monorepo = {
   plugin: { run },
   options: [],
   disables: [],
+  enables: [],
 };
 
 const script = {

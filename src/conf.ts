@@ -3,7 +3,7 @@ import path from "node:path";
 import { format } from "node:util";
 
 import {
-  disableOption,
+  disableOptions,
   options,
   meta,
   NPM,
@@ -49,9 +49,7 @@ const init = async () => {
     throw new Error(message.pnpmRequired);
   }
   void (type.plugin && plugins.type.push(type.plugin));
-  for (const disable of type.disables) {
-    disableOption(disable.option, disable.type);
-  }
+  disableOptions(type);
   return { npm, type: type.name };
 };
 
@@ -63,9 +61,7 @@ const confTypes = async (conf: Conf) => {
     const { name, types: types0 } = await monoPrompt();
     for (const type of types0) {
       void (type.plugin && plugins.type.push(type.plugin));
-      for (const disable of type.disables) {
-        disableOption(disable.option, disable.type);
-      }
+      disableOptions(type);
     }
     conf.monorepo = { name, types: types0.map((e) => e.name) };
     types.push(...conf.monorepo.types);
@@ -130,18 +126,14 @@ const setOptionValues = (
   if (!option.multiple) {
     const value = answer[option.name] as Value;
     void (value.plugin && plugins.value.push(value.plugin));
-    for (const disable of value.disables) {
-      disableOption(disable.option, disable.type);
-    }
+    disableOptions(value);
     conf[option.name] = value.name;
     return;
   }
   const values = answer[option.name] as Value[];
   for (const value of values) {
     void (value.plugin && plugins.value.push(value.plugin));
-    for (const disable of value.disables) {
-      disableOption(disable.option, disable.type);
-    }
+    disableOptions(value);
   }
   conf[option.name] = values.map((e) => e.name);
 };

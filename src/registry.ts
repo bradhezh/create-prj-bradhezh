@@ -91,6 +91,10 @@ export type Value = {
     type?: string;
     option: string;
   }[];
+  enables: {
+    type?: string;
+    option: string;
+  }[];
 };
 export type Option = {
   name: string;
@@ -124,7 +128,7 @@ export const useType = (name: string, label: string) => {
     throw new Error(message.sysType);
   }
   if (!options.type.find((e) => e.name === name)) {
-    options.type.push({ name, label, options: [], disables: [] });
+    options.type.push({ name, label, options: [], disables: [], enables: [] });
   }
 };
 
@@ -155,17 +159,31 @@ export const useOption = (
   }
 };
 
-export const regValue = (value: Value, option: string, type?: string) => {
+export const regValue = (
+  value: Value,
+  option: string,
+  type?: string,
+  index?: number,
+) => {
   const opt = getOption(option, type);
   if (opt.values.find((e) => e.name === value.name)) {
     throw new Error(message.valueExist);
   }
-  opt.values.push(value);
+  if (index === undefined) {
+    opt.values.push(value);
+    return;
+  }
+  opt.values.splice(index, 0, value);
 };
 
-export const disableOption = (name: string, type?: string) => {
-  const option = getOption(name, type);
-  option.disabled = true;
+export const disableOptions = (value: Value) => {
+  for (const { option, type } of value.disables) {
+    if (value.enables.find((e) => e.option === option)?.type === type) {
+      continue;
+    }
+    const opt = getOption(option, type);
+    opt.disabled = true;
+  }
 };
 
 const getOptions = (category: Category, type?: string, option?: string) => {

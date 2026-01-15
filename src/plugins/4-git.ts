@@ -17,6 +17,7 @@ regOption(
           { option: meta.plugin.option.docker },
           */
         ],
+        enables: [],
       },
     ],
   },
@@ -27,8 +28,13 @@ regOption(
     name: option.gitVis,
     label: "Git repository visibility",
     values: [
-      { name: value.gitVis.public, label: "Public", disables: [] },
-      { name: value.gitVis.private, label: "Private", disables: [] },
+      { name: value.gitVis.public, label: "Public", disables: [], enables: [] },
+      {
+        name: value.gitVis.private,
+        label: "Private",
+        disables: [],
+        enables: [],
+      },
     ],
   },
   meta.system.option.category.optional,

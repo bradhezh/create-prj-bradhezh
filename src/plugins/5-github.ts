@@ -53,8 +53,16 @@ const run = async (conf: Conf, s: Spinner) => {
 };
 
 regValue(
-  { name: value.git.github, label: "GitHub", plugin: { run }, disables: [] },
+  {
+    name: value.git.github,
+    label: "GitHub",
+    plugin: { run },
+    disables: [],
+    enables: [],
+  },
   meta.plugin.option.git,
+  undefined,
+  0,
 );
 
 const command = {
@@ -79,21 +87,15 @@ const command = {
 } as const;
 
 const checkGit = async () => {
-  try {
-    await exec(command.git);
-    return true;
-  } catch {
-    return false;
-  }
+  return exec(command.git)
+    .then(() => true)
+    .catch(() => false);
 };
 
 const checkGh = async () => {
-  try {
-    await exec(command.gh);
-    return true;
-  } catch {
-    return false;
-  }
+  return exec(command.gh)
+    .then(() => true)
+    .catch(() => false);
 };
 
 const checkAuth = async (vis: string, s: Spinner) => {
