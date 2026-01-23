@@ -80,10 +80,11 @@ const rsSetPkgDeps = async (
   ) {
     return;
   }
-  if (ts && (await setPkgDeps(npm, pkgDeps, ts, cwd))) {
+  await setPkgDeps(npm, { default: pkgDeps }, "default", cwd);
+  if (ts === meta.plugin.value.none) {
     return;
   }
-  await setPkgDeps(npm, { default: pkgDeps.default }, "default", cwd);
+  await setPkgDeps(npm, { default: tsPkgDeps }, "default", cwd);
 };
 
 const label = "Rspack" as const;
@@ -118,17 +119,17 @@ const nestTmplt = {
 const template: Partial<
   Record<NonNullable<Ts>, Template<Exclude<TypeFrmwk, "nest">>>
 > = {
-  metadata: {
-    cli: { name: "rspack.config.ts", path: "/rspack-cli-dec.config.ts" },
-    lib: { name: "rspack.config.ts", path: "/rspack-lib-dec.config.ts" },
-    express: { name: "rspack.config.ts", path: "/rspack-be-dec.config.ts" },
-    default: { name: "rspack.config.ts", path: "/rspack-dec.config.ts" },
-  },
   none: {
     cli: { name: "rspack.config.js", path: "/rspack-cli.config.js" },
     lib: { name: "rspack.config.js", path: "/rspack-lib.config.js" },
     express: { name: "rspack.config.js", path: "/rspack-be.config.js" },
     default: { name: "rspack.config.js", path: "/rspack.config.js" },
+  },
+  metadata: {
+    cli: { name: "rspack.config.ts", path: "/rspack-cli-dec.config.ts" },
+    lib: { name: "rspack.config.ts", path: "/rspack-lib-dec.config.ts" },
+    express: { name: "rspack.config.ts", path: "/rspack-be-dec.config.ts" },
+    default: { name: "rspack.config.ts", path: "/rspack-dec.config.ts" },
   },
   default: {
     cli: { name: "rspack.config.ts", path: "/rspack-cli.config.ts" },
@@ -159,21 +160,17 @@ const scripts = {
   ],
 } as const;
 
-const pkgDeps = {
-  none: [
-    { name: "@rspack/cli", version: "^1", dev: true },
-    { name: "@rspack/core", version: "^1", dev: true },
-    { name: "run-script-webpack-plugin", version: "^0", dev: true },
-    { name: "webpack-node-externals", version: "^3", dev: true },
-  ],
-  default: [
-    { name: "@rspack/cli", version: "^1", dev: true },
-    { name: "@rspack/core", version: "^1", dev: true },
-    { name: "run-script-webpack-plugin", version: "^0", dev: true },
-    { name: "ts-checker-rspack-plugin", version: "^1", dev: true },
-    { name: "webpack-node-externals", version: "^3", dev: true },
-  ],
-} as const;
+const pkgDeps = [
+  { name: "@rspack/cli", version: "^1", dev: true },
+  { name: "@rspack/core", version: "^1", dev: true },
+  { name: "run-script-webpack-plugin", version: "^0", dev: true },
+  { name: "webpack-node-externals", version: "^3", dev: true },
+] as const;
+
+const tsPkgDeps = [
+  { name: "@types/webpack-node-externals", version: "^3", dev: true },
+  { name: "ts-checker-rspack-plugin", version: "^1", dev: true },
+] as const;
 
 const message = {
   ...msg,

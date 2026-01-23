@@ -1,7 +1,7 @@
 import { log, spinner } from "@clack/prompts";
 import { format } from "node:util";
 
-import { meta, NPM, Conf, PluginType } from "@/registry";
+import { regType, meta, NPM, Conf, PluginType } from "@/registry";
 import {
   installTmplt,
   setPkgName,
@@ -14,7 +14,7 @@ import { message } from "@/message";
 const run = async (conf: Conf) => {
   const s = spinner();
   s.start();
-  log.info(format(message.pluginStart, monorepo.label));
+  log.info(format(message.pluginStart, label));
 
   const npm = conf.npm;
   const types = conf.monorepo!.types as PluginType[];
@@ -50,7 +50,7 @@ const run = async (conf: Conf) => {
   log.info(message.setShared);
   await createShared(npm, types, jsTypes);
 
-  log.info(format(message.pluginFinish, monorepo.label));
+  log.info(format(message.pluginFinish, label));
   s.stop();
 };
 
@@ -193,14 +193,16 @@ const createShared = async (
   await setPkgVers(npm, meta.system.type.shared);
 };
 
-export const monorepo = {
+const label = "Monorepo" as const;
+
+regType({
   name: meta.system.type.monorepo,
-  label: "Monorepo",
+  label,
   plugin: { run },
   options: [],
   disables: [],
   enables: [],
-};
+});
 
 const base =
   "https://raw.githubusercontent.com/bradhezh/prj-template/master/type/monorepo" as const;

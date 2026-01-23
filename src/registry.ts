@@ -104,7 +104,10 @@ export const options: {
 } = { type: [], compulsory: [], optional: [] };
 
 export const regType = (type: Type, index?: number) => {
-  if (Object.keys(meta.system.type).includes(type.name)) {
+  if (
+    type.name !== meta.system.type.monorepo &&
+    Object.keys(meta.system.type).includes(type.name)
+  ) {
     throw new Error(message.sysType);
   }
   if (options.type.find((e) => e.name === type.name)) {
@@ -118,7 +121,10 @@ export const regType = (type: Type, index?: number) => {
 };
 
 export const useType = (name: string, label: string, index?: number) => {
-  if (Object.keys(meta.system.type).includes(name)) {
+  if (
+    name !== meta.system.type.monorepo &&
+    Object.keys(meta.system.type).includes(name)
+  ) {
     throw new Error(message.sysType);
   }
   if (options.type.find((e) => e.name === name)) {
@@ -218,9 +224,19 @@ export const regValue = (
   opt.values.splice(index, 0, value);
 };
 
-export const disableOptions = (value: Value) => {
+export const enableOptions = (conf: Conf, value: Value) => {
+  for (const { option, type } of value.enables) {
+    const opt = getOption(option, type);
+    opt.disabled = false;
+  }
   for (const { option, type } of value.disables) {
-    if (value.enables.find((e) => e.option === option)?.type === type) {
+    if (
+      enableFoundInTypes(conf, option, type) ||
+      enableFoundInOptions(conf, option, type, [
+        ...options.compulsory,
+        ...options.optional,
+      ])
+    ) {
       continue;
     }
     const opt = getOption(option, type);
@@ -294,4 +310,37 @@ const getOption = (name: string, type?: string) => {
     throw new Error(message.optionNotExist);
   }
   return option;
+};
+
+const enableFoundInTypes = (conf: Conf, option: string, type?: string) => {
+  const types = [conf.type, ...(conf.monorepo?.types ?? [])];
+  const types0 = options.type.filter((type0) => types.includes(type0.name));
+  return (
+    types0.find((type0) =>
+      type0.enables.find((e) => e.option === option && e.type === type),
+    ) ||
+    types0.find((type0) =>
+      enableFoundInOptions(conf, option, type, type0.options, type0.name),
+    )
+  );
+};
+
+const enableFoundInOptions = (
+  conf: Conf,
+  option: string,
+  type: string | undefined,
+  opts: Option[],
+  ofType?: string,
+) => {
+  const optConf = !ofType ? conf : conf[ofType];
+  if (!optConf || typeof optConf !== "object" || Array.isArray(optConf)) {
+    return false;
+  }
+  return opts.find(
+    (opt) =>
+      opt.name in optConf &&
+      opt.values
+        .find((v) => v.name === optConf[opt.name])
+        ?.enables.find((e) => e.option === option && e.type === type),
+  );
 };
