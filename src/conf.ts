@@ -5,11 +5,12 @@ import wrapAnsi from "wrap-ansi";
 
 import {
   adjustOptions,
+  addInQueue,
   options,
   meta,
   NPM,
   Conf,
-  IPlugin,
+  Plugin,
   Option,
   Value,
   Category,
@@ -17,11 +18,7 @@ import {
 } from "@/registry";
 import { message } from "@/message";
 
-export const plugins: {
-  type: IPlugin[];
-  option: { [K in Category]: IPlugin[] };
-  value: IPlugin[];
-} = { type: [], option: { type: [], compulsory: [], optional: [] }, value: [] };
+export const plugins: Plugin[] = [];
 
 export const config = async () => {
   const conf: Conf = await init();
@@ -50,7 +47,7 @@ const init = async () => {
   }
   const conf = { npm, type: type.name };
   adjustOptions(conf, type);
-  void (type.plugin && plugins.type.push(type.plugin));
+  void (type.plugin && addInQueue(plugins, type.plugin));
   return conf;
 };
 
@@ -64,7 +61,7 @@ const confTypes = async (conf: Conf) => {
     conf.monorepo = { name, types: types0.map((e) => e.name) };
     for (const type of types0) {
       adjustOptions(conf, type);
-      void (type.plugin && plugins.type.push(type.plugin));
+      void (type.plugin && addInQueue(plugins, type.plugin));
     }
     types.push(...conf.monorepo.types);
     const monorepo = options.type.find(
@@ -106,9 +103,6 @@ const confOptions = async (
   if (!opts0.length) {
     return;
   }
-  if (category === meta.system.option.category.type && !(type && typeLabel)) {
-    throw new Error(message.typeRequired);
-  }
   const arg = optionPromptArg(conf, category, type, typeLabel);
   const optConf = (
     category !== meta.system.option.category.type ? conf : conf[type!]
@@ -118,7 +112,7 @@ const confOptions = async (
       continue;
     }
     const answer = await optionPrompt(opt, arg);
-    setOptionValues(conf, optConf, opt, category, answer);
+    setOptionValues(conf, optConf, opt, answer);
   }
 };
 
@@ -128,10 +122,9 @@ const setOptionValues = (
   conf: Conf,
   optConf: OptionConf,
   option: Option,
-  category: Category,
   answer: Answer,
 ) => {
-  void (option.plugin && plugins.option[category].push(option.plugin));
+  void (option.plugin && addInQueue(plugins, option.plugin));
   if (!option.values.length) {
     optConf[option.name] = answer[option.name] as string;
     return;
@@ -140,14 +133,14 @@ const setOptionValues = (
     const value = answer[option.name] as Value;
     optConf[option.name] = value.name;
     adjustOptions(conf, value);
-    void (value.plugin && plugins.value.push(value.plugin));
+    void (value.plugin && addInQueue(plugins, value.plugin));
     return;
   }
   const values = answer[option.name] as Value[];
   optConf[option.name] = values.map((e) => e.name);
   for (const value of values) {
     adjustOptions(conf, value);
-    void (value.plugin && plugins.value.push(value.plugin));
+    void (value.plugin && addInQueue(plugins, value.plugin));
   }
 };
 
@@ -173,10 +166,10 @@ const confOptional = async (conf: Conf) => {
   }
   if (optl === optional.default.value) {
     for (const opt of defOpts) {
-      void (opt.plugin && plugins.option.optional.push(opt.plugin));
+      void (opt.plugin && addInQueue(plugins, opt.plugin));
       const value = opt.values[0];
       conf[opt.name] = !opt.multiple ? value.name : [value.name];
-      void (value.plugin && plugins.value.push(value.plugin));
+      void (value.plugin && addInQueue(plugins, value.plugin));
     }
   }
   await confOptions(

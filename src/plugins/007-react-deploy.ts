@@ -1,9 +1,10 @@
+import { option } from "./const";
 import { regOption, meta, PosMode } from "@/registry";
 
 regOption(
   {
-    name: meta.plugin.option.orm,
-    label: "ORM",
+    name: option.reactDeploy,
+    label: "React deployment",
     values: [
       {
         name: meta.plugin.value.none,
@@ -15,5 +16,6 @@ regOption(
       },
     ],
   },
-  meta.system.option.category.optional,
+  meta.system.option.category.type,
+  meta.plugin.type.frontend,
 );

@@ -3,21 +3,21 @@ import { format } from "node:util";
 
 import { value, FrmwkValue, TsValue } from "./const";
 import {
-  useOption,
   regValue,
   typeFrmwksSkip,
   meta,
   NPM,
   Conf,
+  Plugin,
   PrimeType,
 } from "@/registry";
 import { installTmplt, setPkgScripts, setPkgDeps, Template } from "@/command";
 import { message as msg } from "@/message";
 
-const run = async (conf: Conf) => {
+async function run(this: Plugin, conf: Conf) {
   const s = spinner();
   s.start();
-  log.info(format(message.pluginStart, label));
+  log.info(format(message.pluginStart, this.label));
 
   const npm = conf.npm;
   const types = (conf.monorepo?.types ?? [conf.type]) as PrimeType[];
@@ -41,9 +41,9 @@ const run = async (conf: Conf) => {
     await rsSetPkgDeps(npm, ts, cwd);
   }
 
-  log.info(format(message.pluginFinish, label));
+  log.info(format(message.pluginFinish, this.label));
   s.stop();
-};
+}
 
 const install = async (typeFrmwk: TypeFrmwk, ts: TsValue, cwd: string) => {
   if (typeFrmwk === value.framework.nest) {
@@ -63,19 +63,18 @@ const rsSetPkgDeps = async (npm: NPM, ts: TsValue, cwd: string) => {
 
 const label = "Rspack" as const;
 
-useOption(
-  meta.plugin.option.builder,
-  "Builder",
-  meta.system.option.category.compulsory,
-);
 regValue(
   {
     name: value.builder.rspack,
     label,
-    plugin: { run },
     skips: [],
     keeps: [],
     requires: [],
+    plugin: {
+      name: `${meta.plugin.option.builder}_${value.builder.rspack}`,
+      label,
+      run,
+    },
   },
   meta.plugin.option.builder,
 );

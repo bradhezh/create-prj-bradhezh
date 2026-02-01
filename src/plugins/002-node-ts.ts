@@ -4,25 +4,25 @@ import { log, spinner } from "@clack/prompts";
 import { format } from "node:util";
 
 import { value, TsValue } from "./const";
-import { regOption, meta, NPM, Conf } from "@/registry";
+import { regOption, meta, NPM, Conf, Plugin } from "@/registry";
 import { setTsOptions, installTmplt, setPkgName, setPkgVers } from "@/command";
 import { message as msg } from "@/message";
 
-const run = async (conf: Conf) => {
+async function run(this: Plugin, conf: Conf) {
   const s = spinner();
   s.start();
+  log.info(format(message.pluginStart, this.label));
 
   const npm = conf.npm;
   const name = conf.node!.name ?? meta.plugin.type.node;
   const cwd = conf.type !== meta.plugin.type.monorepo ? "." : name;
   const ts = conf.node!.typescript as Ts;
 
-  log.info(format(message.pluginStart, `Typescript for "${name}"`));
   await reinstall(npm, name, ts, cwd);
 
-  log.info(format(message.pluginFinish, `Typescript for "${name}"`));
+  log.info(format(message.pluginFinish, this.label));
   s.stop();
-};
+}
 
 const reinstall = async (npm: NPM, name: string, ts: Ts, cwd: string) => {
   if (ts === value.typescript.metadata) {
@@ -41,11 +41,17 @@ const reinstall = async (npm: NPM, name: string, ts: Ts, cwd: string) => {
   }
 };
 
+const label = "Typescript for Node.js app" as const;
+
 regOption(
   {
     name: meta.plugin.option.type.typescript,
-    label: "Typescript for Node.js app",
-    plugin: { run },
+    label,
+    plugin: {
+      name: `${meta.plugin.type.node}_${meta.plugin.option.type.typescript}`,
+      label,
+      run,
+    },
     values: [
       {
         name: value.typescript.nodec,

@@ -6,7 +6,7 @@ import { format } from "node:util";
 import wrapAnsi from "wrap-ansi";
 
 import { value, FrmwkValue } from "./const";
-import { regType, meta, NPM, Conf, PrimeType } from "@/registry";
+import { regType, meta, NPM, Conf, Plugin, PrimeType } from "@/registry";
 import {
   installTmplt,
   setPkgName,
@@ -20,37 +20,36 @@ import {
 } from "@/command";
 import { message as msg } from "@/message";
 
-const run = (type: PrimeType) => {
-  return async (conf: Conf) => {
-    const s = spinner();
-    s.start();
+async function run(this: Plugin, conf: Conf) {
+  const s = spinner();
+  s.start();
 
-    const npm = conf.npm;
-    const name = conf[type]?.name ?? type;
-    const cwd = conf.type !== meta.plugin.type.monorepo ? "." : name;
-    const typeFrmwk = (conf[type]?.framework ?? type) as TypeFrmwk;
-    const shared = (conf.monorepo?.types.length ?? 0) > 1;
+  const type = this.name as PrimeType;
+  const npm = conf.npm;
+  const name = conf[type]?.name ?? type;
+  const cwd = conf.type !== meta.plugin.type.monorepo ? "." : name;
+  const typeFrmwk = (conf[type]?.framework ?? type) as TypeFrmwk;
+  const shared = (conf.monorepo?.types.length ?? 0) > 1;
 
-    log.info(format(message.pluginStart, `"${name}"`));
-    await install(npm, typeFrmwk, cwd, s);
+  log.info(format(message.pluginStart, this.label));
+  await install(npm, typeFrmwk, cwd, s);
 
-    log.info(message.setPkg);
-    await setPkgName(npm, name, cwd);
-    await setPkgVers(npm, cwd);
-    await typeSetPkgScripts(npm, typeFrmwk, cwd);
+  log.info(message.setPkg);
+  await setPkgName(npm, name, cwd);
+  await setPkgVers(npm, cwd);
+  await typeSetPkgScripts(npm, typeFrmwk, cwd);
 
-    log.info(message.setWkspace);
-    await setWkspace(typeFrmwk, cwd);
+  log.info(message.setWkspace);
+  await setWkspace(typeFrmwk, cwd);
 
-    if (shared) {
-      log.info(message.setShared);
-      await setShared(typeFrmwk, cwd);
-    }
+  if (shared) {
+    log.info(message.setShared);
+    await setShared(typeFrmwk, cwd);
+  }
 
-    log.info(format(message.pluginFinish, `"${name}"`));
-    s.stop();
-  };
-};
+  log.info(format(message.pluginFinish, this.label));
+  s.stop();
+}
 
 const install = async (
   npm: NPM,
@@ -197,7 +196,10 @@ for (const { name, label, frameworks } of [
   regType({
     name,
     label,
-    plugin: { run: run(name) },
+    skips: [],
+    keeps: [],
+    requires: [],
+    plugin: { name, label, run },
     options: [
       {
         name: meta.plugin.option.type.name,
@@ -210,9 +212,6 @@ for (const { name, label, frameworks } of [
         values: frameworks,
       },
     ],
-    skips: [],
-    keeps: [],
-    requires: [],
   });
 }
 for (const { name, label } of [
@@ -223,14 +222,6 @@ for (const { name, label } of [
   regType({
     name,
     label,
-    plugin: { run: run(name) },
-    options: [
-      {
-        name: meta.plugin.option.type.name,
-        label: `${label} name`,
-        values: [],
-      },
-    ],
     skips: [],
     keeps: [
       { option: meta.plugin.option.builder },
@@ -238,6 +229,14 @@ for (const { name, label } of [
       { option: meta.plugin.option.lint },
     ],
     requires: [],
+    plugin: { name, label, run },
+    options: [
+      {
+        name: meta.plugin.option.type.name,
+        label: `${label} name`,
+        values: [],
+      },
+    ],
   });
 }
 

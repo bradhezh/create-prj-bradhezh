@@ -1,4 +1,5 @@
-import { regOption, meta } from "@/registry";
+import { option } from "./const";
+import { regOption, meta, PosMode } from "@/registry";
 
 regOption(
   {
@@ -8,7 +9,8 @@ regOption(
       {
         name: meta.plugin.value.none,
         label: "None",
-        skips: [],
+        pos: { mode: PosMode.last },
+        skips: [{ option: option.deploySrc, type: meta.plugin.type.backend }],
         keeps: [],
         requires: [],
       },

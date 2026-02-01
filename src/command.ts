@@ -2,11 +2,13 @@ import { exec as execAsync } from "node:child_process";
 import { promisify, format } from "node:util";
 import { mkdir, readFile, writeFile, rm, access } from "node:fs/promises";
 import { join } from "node:path";
+import { homedir } from "node:os";
 import { get } from "axios";
 import Json from "comment-json";
 import Yaml from "yaml";
 
 import { meta, NPM } from "@/registry";
+import { message } from "@/message";
 
 const exec = promisify(execAsync);
 
@@ -189,6 +191,9 @@ export const createWkspace = async (pkgs: readonly string[]) => {
 
 export const addPkgInWkspace = async (pkg: string) => {
   const doc = Yaml.parse(await readFile(workspace, "utf8").catch(() => "{}"));
+  if (typeof doc !== "object") {
+    throw new Error(format(message.invFormat, workspace));
+  }
   void (doc.packages || (doc.packages = []));
   doc.packages.push(pkg);
   await writeFile(workspace, Yaml.stringify(doc));
@@ -196,6 +201,9 @@ export const addPkgInWkspace = async (pkg: string) => {
 
 export const addOnlyBuiltDeps = async (deps: readonly string[]) => {
   const doc = Yaml.parse(await readFile(workspace, "utf8").catch(() => "{}"));
+  if (typeof doc !== "object") {
+    throw new Error(format(message.invFormat, workspace));
+  }
   void (doc.onlyBuiltDependencies || (doc.onlyBuiltDependencies = []));
   doc.onlyBuiltDependencies.push(...deps);
   await writeFile(workspace, Yaml.stringify(doc));
@@ -228,6 +236,9 @@ const tsconfig = "tsconfig.json" as const;
 export const setTsOptions = async (options: object, cwd?: string) => {
   const file = join(cwd ?? "", tsconfig);
   const doc = Json.parse(await readFile(file, "utf8").catch(() => "{}")) as any;
+  if (typeof doc !== "object") {
+    throw new Error(format(message.invFormat, file));
+  }
   void (doc.compilerOptions || (doc.compilerOptions = {}));
   doc.compilerOptions = { ...doc.compilerOptions, ...options };
   const text =
@@ -245,6 +256,9 @@ export const setPathAlias = async (
 ) => {
   const file = join(cwd ?? "", tsconfig);
   const doc = Json.parse(await readFile(file, "utf8").catch(() => "{}")) as any;
+  if (typeof doc !== "object") {
+    throw new Error(format(message.invFormat, file));
+  }
   void (doc.compilerOptions || (doc.compilerOptions = {}));
   doc.compilerOptions.baseUrl = base;
   doc.compilerOptions.paths = pathAlias;
@@ -261,6 +275,9 @@ export const addPathAlias = async (
 ) => {
   const file = join(cwd ?? "", tsconfig);
   const doc = Json.parse(await readFile(file, "utf8").catch(() => "{}")) as any;
+  if (typeof doc !== "object") {
+    throw new Error(format(message.invFormat, file));
+  }
   void (doc.compilerOptions || (doc.compilerOptions = {}));
   void (doc.compilerOptions.paths || (doc.compilerOptions.paths = {}));
   doc.compilerOptions.paths[name] = paths;
@@ -278,6 +295,32 @@ export const setPathAliasWithShared = async (cwd: string) => {
     .then(() => (pathAliasWithShared["@/*"][0] = format(`%s/${src}/*`, cwd)))
     .catch(() => (pathAliasWithShared["@/*"][0] = format("%s/*", cwd)));
   await setPathAlias("..", pathAliasWithShared, cwd);
+};
+
+const configDir = ".bradhezh-create-prj" as const;
+const config = "config.json" as const;
+
+export const getConfig = async (key: string) => {
+  const doc = Json.parse(
+    await readFile(join(homedir(), configDir, config), "utf-8").catch(
+      () => "{}",
+    ),
+  ) as any;
+  return typeof doc !== "object" ? undefined : doc[key];
+};
+
+export const setConfig = async (key: string, value: unknown) => {
+  await mkdir(join(homedir(), configDir), { recursive: true });
+  const file = join(homedir(), configDir, config);
+  const doc = Json.parse(await readFile(file, "utf8").catch(() => "{}")) as any;
+  if (typeof doc !== "object") {
+    throw new Error(format(message.invFormat, file));
+  }
+  doc[key] = value;
+  const text =
+    Json.stringify(doc, null, 2).replace(/\[\s+"([^"]+)"\s+\]/g, '["$1"]') +
+    "\n";
+  await writeFile(file, text);
 };
 
 type Tmplt = { name: string; path?: string };

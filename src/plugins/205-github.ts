@@ -4,29 +4,30 @@ import { mkdir, writeFile, access } from "node:fs/promises";
 import { join } from "node:path";
 import { log, spinner } from "@clack/prompts";
 
-import { option, value, GitVisValue } from "./const";
-import { regValue, meta, Conf, PluginType } from "@/registry";
+import { option, value, rtConf, RtConf, GitVisValue } from "./const";
+import { regValue, meta, Conf, Plugin, PluginType } from "@/registry";
 import { installTmplt } from "@/command";
 import { message as msg } from "@/message";
 
-const run = async (conf: Conf) => {
+async function run(this: Plugin, conf: Conf) {
   const s = spinner();
   s.start();
-  log.info(format(message.pluginStart, label));
+  log.info(format(message.pluginStart, this.label));
 
   if (await init()) {
     const name = conf[conf.type as PluginType]?.name ?? conf.type;
     const vis = (conf[option.gitVis] ?? value.gitVis.private) as GitVis;
 
-    const user = await checkAuth(vis, s);
-    const scopes = await checkScopes(vis, s);
+    const user = await checkAuth(s);
+    await checkScopes(s);
     await createGh(user, name, vis);
-    await setGh(user, name, vis, scopes);
+    await setGh(user, name, vis);
+    (conf[rtConf.github] as RtConf["github"]) = value.done;
   }
 
-  log.info(format(message.pluginFinish, label));
+  log.info(format(message.pluginFinish, this.label));
   s.stop();
-};
+}
 
 const init = async () => {
   if (
@@ -61,35 +62,26 @@ const init = async () => {
   return false;
 };
 
-const checkAuth = async (vis: GitVis, s: Spinner) => {
+const checkAuth = async (s: Spinner) => {
   try {
     return (await exec(command.user)).stdout.trim();
   } catch {
-    const cmd =
-      vis !== value.gitVis.public ? command.login : command.loginPubRule;
-    log.info(cmd);
+    log.info(command.login);
     s.stop();
-    execSync(cmd, { stdio: "inherit" });
+    execSync(command.login, { stdio: "inherit" });
     s.start();
     return (await exec(command.user)).stdout.trim();
   }
 };
 
-const checkScopes = async (vis: GitVis, s: Spinner) => {
-  let scopes = await getScopes();
-  if (vis !== value.gitVis.public || scopes.includes(pubScope)) {
-    return scopes;
+const checkScopes = async (s: Spinner) => {
+  while (!(await getScopes()).includes(repoScope)) {
+    log.warn(message.scopeRequired);
+    log.info(command.refresh);
+    s.stop();
+    execSync(command.refresh, { stdio: "inherit" });
+    s.start();
   }
-  log.warn(message.scopeRequired);
-  log.info(command.refresh);
-  s.stop();
-  execSync(command.refresh, { stdio: "inherit" });
-  s.start();
-  scopes = await getScopes();
-  if (!scopes.includes(pubScope)) {
-    log.warn(message.noPubScope);
-  }
-  return scopes;
 };
 
 const createGh = async (user: string, name: string, vis: GitVis) => {
@@ -105,13 +97,9 @@ const createGh = async (user: string, name: string, vis: GitVis) => {
   await exec(command.pushu);
 };
 
-const setGh = async (
-  user: string,
-  name: string,
-  vis: GitVis,
-  scopes: string[],
-) => {
-  if (vis !== value.gitVis.public || !scopes.includes(pubScope)) {
+const setGh = async (user: string, name: string, vis: GitVis) => {
+  await exec(format(command.setVar, nameVar, name));
+  if (vis !== value.gitVis.public) {
     return;
   }
   const rule = {
@@ -152,14 +140,16 @@ regValue(
   {
     name: value.git.github,
     label,
-    plugin: { run },
     skips: [],
     keeps: [],
     requires: [],
+    plugin: {
+      name: `${meta.plugin.option.git}_${value.git.github}`,
+      label,
+      run,
+    },
   },
   meta.plugin.option.git,
-  undefined,
-  0,
 );
 
 const exec = promisify(execAsync);
@@ -180,20 +170,21 @@ const command = {
   gh: "gh --version",
   auth: "gh auth status",
   user: "gh api user --jq .login",
-  login: "gh auth login",
-  loginPubRule: 'gh auth login --scopes "admin:repo_hook,repo"',
-  refresh: "gh auth refresh --scopes admin:repo_hook",
+  login: "gh auth login --scopes repo",
+  refresh: "gh auth refresh --scopes repo",
   createGh: "gh repo create %s --%s",
   rename: "git branch -M master",
   remote: "git remote add origin https://github.com/%s/%s.git",
   pushu: "git push -u origin master",
   push: "git push",
+  setVar: "gh variable set %s --body %s",
   pubRule:
     "gh api --method PUT /repos/%s/%s/branches/master/protection --input -",
 } as const;
 
 const scopesPattern = /Token scopes: (.*)/i;
-const pubScope = "admin:repo_hook" as const;
+const repoScope = "repo" as const;
+const nameVar = "NAME" as const;
 const github = ".github" as const;
 const codeowners = "CODEOWNERS" as const;
 
@@ -201,8 +192,5 @@ const message = {
   ...msg,
   noGit: 'No "git" installed to create the repository.',
   noGh: 'No "gh" installed to create the repository on GitHub.',
-  scopeRequired:
-    '"admin:repo_hook" required in scopes to set branch protection rules for the public repository.',
-  noPubScope:
-    'no "admin:repo_hook" selected, no branch protection rules will be set.',
+  scopeRequired: '"repo" required in scopes.',
 } as const;

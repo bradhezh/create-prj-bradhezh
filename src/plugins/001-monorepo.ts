@@ -1,7 +1,7 @@
 import { log, spinner } from "@clack/prompts";
 import { format } from "node:util";
 
-import { regType, meta, NPM, Conf, PrimeType } from "@/registry";
+import { regType, meta, NPM, Conf, Plugin, PrimeType } from "@/registry";
 import {
   installTmplt,
   setPkgName,
@@ -11,10 +11,10 @@ import {
 } from "@/command";
 import { message } from "@/message";
 
-const run = async (conf: Conf) => {
+async function run(this: Plugin, conf: Conf) {
   const s = spinner();
   s.start();
-  log.info(format(message.pluginStart, label));
+  log.info(format(message.pluginStart, this.label));
 
   const npm = conf.npm;
   const types = conf.monorepo!.types as PrimeType[];
@@ -52,9 +52,9 @@ const run = async (conf: Conf) => {
     await createShared(npm, types, jsTypes);
   }
 
-  log.info(format(message.pluginFinish, label));
+  log.info(format(message.pluginFinish, this.label));
   s.stop();
-};
+}
 
 const monoSetPkgScripts = async (
   npm: NPM,
@@ -187,11 +187,11 @@ const label = "Monorepo" as const;
 regType({
   name: meta.plugin.type.monorepo,
   label,
-  plugin: { run },
-  options: [],
   skips: [],
   keeps: [],
   requires: [],
+  plugin: { name: meta.plugin.type.monorepo, label, run },
+  options: [],
 });
 
 const base =

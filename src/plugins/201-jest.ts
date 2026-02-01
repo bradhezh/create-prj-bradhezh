@@ -10,6 +10,7 @@ import {
   meta,
   NPM,
   Conf,
+  Plugin,
   PrimeType,
 } from "@/registry";
 import {
@@ -21,17 +22,17 @@ import {
 } from "@/command";
 import { message as msg } from "@/message";
 
-const run = async (conf: Conf) => {
+async function run(this: Plugin, conf: Conf) {
   const s = spinner();
   s.start();
-  log.info(format(message.pluginStart, label));
+  log.info(format(message.pluginStart, this.label));
 
   const npm = conf.npm;
   const types0 = conf.monorepo?.types ?? [conf.type];
   const types = (
     types0.length <= 1 ? types0 : [...types0, meta.system.type.shared]
   ) as TargetType[];
-  const withShared = types0.length > 1 ? "withShared" : undefined;
+  const withShared = types0.length <= 1 ? undefined : "withShared";
   const skips = typeFrmwksSkip(meta.plugin.option.test);
 
   for (const type of types) {
@@ -61,9 +62,9 @@ const run = async (conf: Conf) => {
   log.info(message.setWkspace);
   await setWkspaceBuiltDeps({ default: builtDeps }, "default");
 
-  log.info(format(message.pluginFinish, label));
+  log.info(format(message.pluginFinish, this.label));
   s.stop();
-};
+}
 
 const install = async (
   typeFrmwk: TypeFrmwk,
@@ -78,7 +79,8 @@ const install = async (
     const tmplt = template[ts ?? "default"] ?? template.default!;
     const tmplt0 = tmplt[withShared ?? "default"] ?? tmplt.default!;
     await installTmplt(base, tmplt0, typeFrmwk, cwd);
-    await installTmplt(base, srcTmplt, ts ?? "default", cwd, true);
+    const tmplt1 = srcTmplt[ts ?? "default"] ?? srcTmplt.default!;
+    await installTmplt(base, tmplt1, typeFrmwk, cwd, true);
   }
 };
 
@@ -110,14 +112,16 @@ regValue(
   {
     name: value.test.jest,
     label,
-    plugin: { run },
     skips: [],
     keeps: [],
     requires: [],
+    plugin: {
+      name: `${meta.plugin.option.test}_${value.test.jest}`,
+      label,
+      run,
+    },
   },
   meta.plugin.option.test,
-  undefined,
-  0,
 );
 
 type TargetType = PrimeType | typeof meta.system.type.shared;
@@ -189,9 +193,17 @@ const template: Partial<
 
 const nestSrcTmplt = { name: "jest.tar", path: "/nest/jest.tar" } as const;
 
-const srcTmplt = {
-  none: { name: "jest.tar", path: "/js/jest.tar" },
-  default: { name: "jest.tar", path: "/jest.tar" },
+const srcTmplt: Partial<
+  Record<NonNullable<TsValue> | "default", Template<Exclude<TypeFrmwk, "nest">>>
+> = {
+  none: {
+    express: { name: "jest.tar", path: "/backend/js/jest.tar" },
+    default: { name: "jest.tar", path: "/js/jest.tar" },
+  },
+  default: {
+    express: { name: "jest.tar", path: "/backend/jest.tar" },
+    default: { name: "jest.tar", path: "/jest.tar" },
+  },
 } as const;
 
 const scripts = [{ name: "test", script: "jest --passWithNoTests" }] as const;

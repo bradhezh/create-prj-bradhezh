@@ -1,5 +1,5 @@
 import { option, value } from "./const";
-import { regOption, meta } from "@/registry";
+import { regOption, meta, PosMode } from "@/registry";
 
 regOption(
   {
@@ -9,6 +9,7 @@ regOption(
       {
         name: meta.plugin.value.none,
         label: "None",
+        pos: { mode: PosMode.last },
         skips: [{ option: option.gitVis }, { option: meta.plugin.option.cicd }],
         keeps: [],
         requires: [],

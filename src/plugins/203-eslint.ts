@@ -10,15 +10,16 @@ import {
   meta,
   NPM,
   Conf,
+  Plugin,
   PrimeType,
 } from "@/registry";
 import { installTmplt, setPkgScripts, setPkgDeps, Template } from "@/command";
 import { message as msg } from "@/message";
 
-const run = async (conf: Conf) => {
+async function run(this: Plugin, conf: Conf) {
   const s = spinner();
   s.start();
-  log.info(format(message.pluginStart, label));
+  log.info(format(message.pluginStart, this.label));
 
   const npm = conf.npm;
   const types0 = conf.monorepo?.types ?? [conf.type];
@@ -53,9 +54,9 @@ const run = async (conf: Conf) => {
     await elSetPkgDeps(npm, ts, cwd);
   }
 
-  log.info(format(message.pluginFinish, label));
+  log.info(format(message.pluginFinish, this.label));
   s.stop();
-};
+}
 
 const install = async (
   typeFrmwk: TypeFrmwk,
@@ -81,14 +82,16 @@ regValue(
   {
     name: value.lint.eslint,
     label,
-    plugin: { run },
     skips: [],
     keeps: [],
     requires: [],
+    plugin: {
+      name: `${meta.plugin.option.lint}_${value.lint.eslint}`,
+      label,
+      run,
+    },
   },
   meta.plugin.option.lint,
-  undefined,
-  0,
 );
 
 type TargetType = PrimeType | typeof meta.system.type.shared;

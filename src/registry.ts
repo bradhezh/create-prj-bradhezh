@@ -65,21 +65,22 @@ export type Conf = {
 
 export type Category = keyof typeof meta.system.option.category;
 
-export interface IPlugin {
-  run: (conf: Conf) => Promise<void>;
+export enum PosMode {
+  first = "first",
+  last = "last",
+  after = "after",
 }
-export type Value = {
-  name: string;
-  label: string;
-  plugin?: IPlugin;
+type Pos = { mode: PosMode; refs?: string[] };
+type QueueElem = { name: string; label: string; pos?: Pos };
+export type Plugin = QueueElem & { run: (conf: Conf) => Promise<void> };
+export type Value = QueueElem & {
   skips: { option: string; type?: string }[];
   keeps: { option: string; type?: string }[];
   requires: { option: string; type?: string }[];
+  plugin?: Plugin;
 };
-export type Option = {
-  name: string;
-  label: string;
-  plugin?: IPlugin;
+export type Option = QueueElem & {
+  plugin?: Plugin;
   values: Value[];
   multiple?: boolean;
   optional?: boolean;
@@ -94,127 +95,45 @@ export const options: {
   optional: Option[];
 } = { type: [], compulsory: [], optional: [] };
 
-export const regType = (type: Type, index?: number) => {
+export const regType = (type: Type) => {
   if (Object.keys(meta.system.type).includes(type.name)) {
     throw new Error(message.sysType);
   }
-  if (options.type.find((e) => e.name === type.name)) {
-    throw new Error(message.typeExist);
-  }
-  if (index === undefined) {
-    options.type.push(type);
-    return;
-  }
-  options.type.splice(index, 0, type);
-};
-
-export const useType = (name: string, label: string, index?: number) => {
-  if (Object.keys(meta.system.type).includes(name)) {
-    throw new Error(message.sysType);
-  }
-  if (options.type.find((e) => e.name === name)) {
-    return;
-  }
-  if (index === undefined) {
-    options.type.push({
-      name,
-      label,
-      options: [],
-      skips: [],
-      keeps: [],
-      requires: [],
-    });
-    return;
-  }
-  options.type.splice(index, 0, {
-    name,
-    label,
-    options: [],
-    skips: [],
-    keeps: [],
-    requires: [],
-  });
+  addInQueue(options.type, type);
 };
 
 export const regOption = (
   option: Option,
   category: Category,
   type?: string,
-  replace?: boolean,
-  index?: number,
 ) => {
-  const opts = getOptions(category, type, option.name);
-  const found = opts.findIndex((e) => e.name === option.name);
-  if (found !== -1) {
-    if (!replace) {
-      throw new Error(message.optionExist);
-    }
-    opts.splice(found, 1, option);
-    return;
-  }
-  if (index === undefined) {
-    opts.push(option);
-    return;
-  }
-  opts.splice(index, 0, option);
+  const opts = getOptionsForReg(option.name, category, type);
+  addInQueue(opts, option);
 };
 
-export const useOption = (
-  name: string,
-  label: string,
-  category: Category,
-  type?: string,
-  replace?: boolean,
-  index?: number,
-  multiple?: boolean,
-  optional?: boolean,
-  initial?: string,
-) => {
-  const opts = getOptions(category, type, name);
-  const found = opts.findIndex((e) => e.name === name);
-  if (found !== -1) {
-    if (!replace) {
-      return;
-    }
-    opts.splice(found, 1, {
-      name,
-      label,
-      values: [],
-      multiple,
-      optional,
-      initial,
-    });
-    return;
-  }
-  if (index === undefined) {
-    opts.push({ name, label, values: [], multiple, optional, initial });
-    return;
-  }
-  opts.splice(index, 0, {
-    name,
-    label,
-    values: [],
-    multiple,
-    optional,
-    initial,
-  });
-};
-
-export const regValue = (
-  value: Value,
-  option: string,
-  type?: string,
-  index?: number,
-) => {
+export const regValue = (value: Value, option: string, type?: string) => {
   const opt = getOption(option, type);
-  if (opt.values.find((e) => e.name === value.name)) {
-    throw new Error(message.valueExist);
+  addInQueue(opt.values, value);
+};
+
+export const addInQueue = (queue: QueueElem[], elem: QueueElem) => {
+  if (queue.find((e) => e.name === elem.name)) {
+    throw new Error(message.elemExist);
   }
-  if (index === undefined) {
-    opt.values.push(value);
-    return;
+  if (elem.pos?.mode === PosMode.after && !elem.pos.refs) {
+    throw new Error(message.refsRequired);
   }
-  opt.values.splice(index, 0, value);
+  queue.splice(
+    elem.pos?.mode === PosMode.first
+      ? 0
+      : elem.pos?.mode !== PosMode.last &&
+          queue.at(-1)?.pos?.mode === PosMode.last
+        ? queue.length - 1
+        : queue.length,
+    0,
+    elem,
+  );
+  reSort(queue, elem);
 };
 
 export const adjustOptions = (conf: Conf, value: Value) => {
@@ -258,7 +177,11 @@ export const typeFrmwksSkip = (option: string) => {
   ];
 };
 
-const getOptions = (category: Category, type?: string, option?: string) => {
+const getOptionsForReg = (
+  option: string,
+  category: Category,
+  type?: string,
+) => {
   if (category === meta.system.option.category.type) {
     if (!type) {
       throw new Error(message.typeRequired);
@@ -268,9 +191,6 @@ const getOptions = (category: Category, type?: string, option?: string) => {
       throw new Error(message.typeNotExist);
     }
     return type0.options;
-  }
-  if (!option) {
-    throw new Error(message.optionRequired);
   }
   if (Object.keys(sysConfKey).includes(option)) {
     throw new Error(message.sysConfKey);
@@ -303,6 +223,30 @@ const getOption = (name: string, type?: string) => {
     throw new Error(message.optionNotExist);
   }
   return option;
+};
+
+const reSort = (queue: QueueElem[], elem: QueueElem, seen = new Set()) => {
+  if (seen.has(elem.name)) {
+    throw new Error(message.circularDep);
+  }
+  seen.add(elem.name);
+  const index = queue.findIndex((e) => e.name === elem.name);
+  for (let i = index; ; --i) {
+    const found = queue.findIndex(
+      (e) =>
+        e.pos?.mode === PosMode.after &&
+        e.pos.refs!.find((e) => elem.name.startsWith(e)),
+    );
+    if (found === -1 || found >= i) {
+      break;
+    }
+    if (elem.pos?.mode === PosMode.last) {
+      throw new Error(message.afterLast);
+    }
+    const [move] = queue.splice(found, 1);
+    queue.splice(index, 0, move);
+    reSort(queue, move, new Set(seen));
+  }
 };
 
 const keptOrRequiredInTypes = (conf: Conf, option: string, type?: string) => {
