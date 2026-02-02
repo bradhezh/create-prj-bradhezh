@@ -22,6 +22,7 @@ async function run(this: Plugin, conf: Conf) {
   log.info(format(message.pluginStart, this.label));
 
   const npm = conf.npm;
+  const monorepo = conf.type === meta.plugin.type.monorepo;
   const types0 = conf.monorepo?.types ?? [conf.type];
   const types = (
     types0.length <= 1 ? types0 : [...types0, meta.system.type.shared]
@@ -50,8 +51,11 @@ async function run(this: Plugin, conf: Conf) {
     await install(typeFrmwk, ts, test, cwd);
 
     log.info(message.setPkg);
-    await setPkgScripts(npm, { default: scripts }, "default", cwd);
+    await setPkgScripts(npm, { default: scripts.default }, "default", cwd);
     await elSetPkgDeps(npm, ts, cwd);
+  }
+  if (monorepo) {
+    await setPkgScripts(npm, { monorepo: scripts.monorepo }, "monorepo");
   }
 
   log.info(format(message.pluginFinish, this.label));
@@ -136,7 +140,10 @@ const template: Partial<
   },
 } as const;
 
-const scripts = [{ name: "lint", script: "eslint ." }] as const;
+const scripts = {
+  monorepo: [{ name: "lint", script: "pnpm -r lint" }],
+  default: [{ name: "lint", script: "eslint ." }],
+} as const;
 
 const pkgDeps = [
   { name: "@eslint/js", version: "^9", dev: true },

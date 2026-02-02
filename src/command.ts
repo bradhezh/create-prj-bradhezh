@@ -329,11 +329,11 @@ export type Template<T extends string> = Partial<Record<T | "default", Tmplt>>;
 export const installTmplt = async <K extends string, T extends Template<K>>(
   base: string,
   template: T & { [K0 in keyof T]: K0 extends K | "default" ? T[K0] : never },
-  key: K,
+  key?: K,
   cwd?: string,
   tar?: boolean,
 ) => {
-  const tmplt = template[key] ?? template.default;
+  const tmplt = template[key ?? "default"] ?? template.default;
   if (!tmplt) {
     return;
   }

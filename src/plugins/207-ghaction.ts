@@ -16,15 +16,6 @@ async function run(this: Plugin, conf: Conf) {
 
   const beDeploy = conf.backend?.deployment as DeployValue;
   const beDeploySrc = conf.backend?.[option.deploySrc] as DeploySrcValue;
-  const beCwd =
-    (conf.type !== meta.plugin.type.backend &&
-      conf.type !== meta.plugin.type.monorepo) ||
-    (conf.type === meta.plugin.type.monorepo &&
-      !conf.monorepo?.types.includes(meta.plugin.type.backend))
-      ? undefined
-      : conf.type === meta.plugin.type.backend
-        ? "."
-        : (conf.backend?.name ?? meta.plugin.type.backend);
   const feDeploy = (
     conf.frontend?.framework === value.framework.react
       ? conf.frontend?.[option.reactDeploy]
@@ -37,9 +28,13 @@ async function run(this: Plugin, conf: Conf) {
       ? conf.mobile?.[option.expoDeploy]
       : undefined
   ) as DeployValue;
+  const lint = conf.lint ? "lint" : undefined;
+  const test = conf.test ? "test" : undefined;
+  const beName = conf.backend?.name ?? meta.plugin.type.backend;
+  const beCwd = conf.type !== meta.plugin.type.monorepo ? "." : beName;
 
-  await install(beDeploy, beDeploySrc, feDeploy, mDeploy);
-  await setRepo(beCwd);
+  await install(beDeploy, beDeploySrc, feDeploy, mDeploy, lint, test);
+  await setRepo(beDeploySrc, beName, beCwd);
 
   log.info(format(message.pluginFinish, this.label));
   s.stop();
@@ -50,30 +45,43 @@ const install = async (
   beDeploySrc: DeploySrcValue,
   feDeploy: DeployValue,
   mDeploy: DeployValue,
+  lint: Lint,
+  test: Test,
 ) => {
-  if (!beDeploy) {
-    const tmplt = template[feDeploy ?? "default"] ?? template.default!;
-    await installTmplt(base, tmplt, mDeploy ?? "default", ".", true);
+  if (!beDeploy && !feDeploy && !mDeploy) {
+    const tmplt = template[lint ?? "default"] ?? template.default!;
+    await installTmplt(base, tmplt, test, ".", true);
+  } else if (!beDeploy) {
+    const tmplt = femTmplt[feDeploy ?? "default"] ?? femTmplt.default!;
+    await installTmplt(base, tmplt, mDeploy, ".", true);
   } else if (beDeploy === value.deployment.render) {
-    const tmplt =
-      beRenderTmplt[beDeploySrc ?? "default"] ?? beRenderTmplt.default!;
-    const tmplt0 = tmplt[feDeploy ?? "default"] ?? tmplt.default!;
-    await installTmplt(base, tmplt0, mDeploy ?? "default", ".", true);
+    if (beDeploySrc === value.deploySrc.docker) {
+      const tmplt =
+        beRenderWithDkrTmplt[feDeploy ?? "default"] ??
+        beRenderWithDkrTmplt.default!;
+      await installTmplt(base, tmplt, mDeploy, ".", true);
+    }
   }
 };
 
-const setRepo = async (beCwd?: string) => {
+const setRepo = async (
+  beDeploySrc: DeploySrcValue,
+  beName: string,
+  beCwd: string,
+) => {
   await exec(command.gitAdd);
   await exec(command.gitCi);
   await exec(command.gitPush);
-  await setEnvSecs(beCwd);
+  if (beDeploySrc === value.deploySrc.docker) {
+    await exec(format(command.setVar, beNameVar, beName));
+    await setEnvSecs(beCwd, testEnv);
+  }
 };
 
-const setEnvSecs = async (beCwd?: string) => {
-  if (!beCwd) {
-    return;
-  }
-  const lines = (await readFile(join(beCwd, env), "utf-8")).split(/\r?\n/);
+const setEnvSecs = async (cwd: string, env: string) => {
+  const lines = (await readFile(join(cwd, env), "utf-8").catch(() => "")).split(
+    /\r?\n/,
+  );
   for (const line of lines) {
     if (!line || line.startsWith("#")) {
       continue;
@@ -109,10 +117,26 @@ regValue(
 const exec = promisify(execAsync);
 const execf = promisify(execFile);
 
+type Lint = "lint" | undefined;
+type Test = "test" | undefined;
+
 const base =
   "https://raw.githubusercontent.com/bradhezh/prj-template/master/ghaction" as const;
 
 const template: Partial<
+  Record<NonNullable<Lint> | "default", Template<NonNullable<Test>>>
+> = {
+  lint: {
+    test: { name: "workflow.tar", path: "/lint-test/workflow.tar" },
+    default: { name: "workflow.tar", path: "/lint/workflow.tar" },
+  },
+  default: {
+    test: { name: "workflow.tar", path: "/test/workflow.tar" },
+    default: { name: "workflow.tar", path: "/workflow.tar" },
+  },
+} as const;
+
+const femTmplt: Partial<
   Record<
     NonNullable<DeployValue> | "default",
     Template<NonNullable<DeployValue>>
@@ -124,30 +148,22 @@ const template: Partial<
   },
   default: {
     expo: { name: "workflow.tar", path: "/expo/workflow.tar" },
-    default: { name: "workflow.tar", path: "/workflow.tar" },
   },
 } as const;
 
-const beRenderTmplt: Partial<
+const beRenderWithDkrTmplt: Partial<
   Record<
-    NonNullable<DeploySrcValue> | "default",
-    Partial<
-      Record<
-        NonNullable<DeployValue> | "default",
-        Template<NonNullable<DeployValue>>
-      >
-    >
+    NonNullable<DeployValue> | "default",
+    Template<NonNullable<DeployValue>>
   >
 > = {
+  vercel: {
+    expo: { name: "workflow.tar", path: "/be-render/vercel/expo/workflow.tar" },
+    default: { name: "workflow.tar", path: "/be-render/vercel/workflow.tar" },
+  },
   default: {
-    vercel: {
-      expo: { name: "workflow.tar", path: "/render/vercel/expo/workflow.tar" },
-      default: { name: "workflow.tar", path: "/render/vercel/workflow.tar" },
-    },
-    default: {
-      expo: { name: "workflow.tar", path: "/render/expo/workflow.tar" },
-      default: { name: "workflow.tar", path: "/render/workflow.tar" },
-    },
+    expo: { name: "workflow.tar", path: "/be-render/expo/workflow.tar" },
+    default: { name: "workflow.tar", path: "/be-render/workflow.tar" },
   },
 };
 
@@ -155,6 +171,8 @@ const command = {
   gitAdd: "git add .",
   gitCi: 'git commit -m "github workflow added"',
   gitPush: "git push",
+  setVar: "gh variable set %s --body %s",
 } as const;
 
-const env = ".env.test" as const;
+const beNameVar = "BACKEND_NAME" as const;
+const testEnv = ".env.test" as const;

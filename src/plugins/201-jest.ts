@@ -28,6 +28,7 @@ async function run(this: Plugin, conf: Conf) {
   log.info(format(message.pluginStart, this.label));
 
   const npm = conf.npm;
+  const monorepo = conf.type === meta.plugin.type.monorepo;
   const types0 = conf.monorepo?.types ?? [conf.type];
   const types = (
     types0.length <= 1 ? types0 : [...types0, meta.system.type.shared]
@@ -56,8 +57,11 @@ async function run(this: Plugin, conf: Conf) {
     await install(typeFrmwk, ts, withShared, cwd);
 
     log.info(message.setPkg);
-    await setPkgScripts(npm, { default: scripts }, "default", cwd);
+    await setPkgScripts(npm, { default: scripts.default }, "default", cwd);
     await jeSetPkgDeps(npm, type, typeFrmwk, ts, cwd);
+  }
+  if (monorepo) {
+    await setPkgScripts(npm, { monorepo: scripts.monorepo }, "monorepo");
   }
   log.info(message.setWkspace);
   await setWkspaceBuiltDeps({ default: builtDeps }, "default");
@@ -73,7 +77,7 @@ const install = async (
   cwd: string,
 ) => {
   if (typeFrmwk === value.framework.nest) {
-    await installTmplt(base, nestTmplt, withShared ?? "default", cwd);
+    await installTmplt(base, nestTmplt, withShared, cwd);
     await installTmplt(base, { nest: nestSrcTmplt }, "nest", cwd, true);
   } else {
     const tmplt = template[ts ?? "default"] ?? template.default!;
@@ -206,7 +210,10 @@ const srcTmplt: Partial<
   },
 } as const;
 
-const scripts = [{ name: "test", script: "jest --passWithNoTests" }] as const;
+const scripts = {
+  monorepo: [{ name: "test", script: "pnpm -r test" }],
+  default: [{ name: "test", script: "jest --passWithNoTests" }],
+} as const;
 
 const pkgDeps = [
   { name: "@swc/core", version: "^1", dev: true },

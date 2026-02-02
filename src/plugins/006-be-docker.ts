@@ -6,7 +6,7 @@ import { group, text, password, cancel, log, spinner } from "@clack/prompts";
 
 import { option, value, rtConf, RtConf, GitValue, GitData } from "./const";
 import { regValue, meta, PosMode, NPM, Conf, Plugin } from "@/registry";
-import { installTmplt, getConfig, setConfig } from "@/command";
+import { installTmplt, getConfig, setConfig, Template } from "@/command";
 import { message as msg } from "@/message";
 
 async function run(this: Plugin, conf: Conf) {
@@ -16,6 +16,8 @@ async function run(this: Plugin, conf: Conf) {
 
   const npm = conf.npm;
   const monorepo = conf.type === meta.plugin.type.monorepo;
+  const lint = conf.lint ? "lint" : undefined;
+  const test = conf.test ? "test" : undefined;
   const git = conf.git as GitValue;
   const gitData =
     git === value.git.github
@@ -27,7 +29,7 @@ async function run(this: Plugin, conf: Conf) {
   } else if (git === value.git.github && gitData !== value.done) {
     log.warn(message.noGh);
   }
-  await install(npm, monorepo);
+  await install(npm, monorepo, lint, test);
   const { username, token, readToken } = await checkAuth(s);
   await setRepo(username, token, git, gitData);
   (conf.backend![rtConf.dkrUsername] as RtConf["dkrUsername"]) = username;
@@ -38,14 +40,20 @@ async function run(this: Plugin, conf: Conf) {
   s.stop();
 }
 
-const install = async (npm: NPM, monorepo: boolean) => {
-  await installTmplt(base, { ignore: template.ignore }, "ignore");
+const install = async (npm: NPM, monorepo: boolean, lint: Lint, test: Test) => {
+  const tmplt = template.ignore[lint ?? "default"] ?? template.ignore.default!;
+  await installTmplt(base, tmplt, test);
   if (monorepo) {
-    await installTmplt(base, { monorepo: template.monorepo }, "monorepo");
+    const tmplt =
+      template.monorepo[lint ?? "default"] ?? template.monorepo.default!;
+    await installTmplt(base, tmplt, test);
   } else if (npm === NPM.npm) {
-    await installTmplt(base, { npm: template.npm }, "npm");
+    const tmplt = template.npm[lint ?? "default"] ?? template.npm.default!;
+    await installTmplt(base, tmplt, test);
   } else {
-    await installTmplt(base, { default: template.default }, "default");
+    const tmplt =
+      template.default[lint ?? "default"] ?? template.default.default!;
+    await installTmplt(base, tmplt, test);
   }
 };
 
@@ -163,16 +171,52 @@ regValue(
 
 const exec = promisify(execAsync);
 
+type Lint = "lint" | undefined;
+type Test = "test" | undefined;
 type Spinner = ReturnType<typeof spinner>;
 
 const base =
-  "https://raw.githubusercontent.com/bradhezh/prj-template/master" as const;
+  "https://raw.githubusercontent.com/bradhezh/prj-template/master/docker" as const;
 
-const template = {
-  ignore: { name: ".dockerignore", path: "/docker/dockerignore" },
-  monorepo: { name: "Dockerfile", path: "/docker/Dockerfile-mono" },
-  npm: { name: "Dockerfile", path: "/docker/Dockerfile-npm" },
-  default: { name: "Dockerfile", path: "/docker/Dockerfile" },
+const template: Record<
+  "ignore" | "monorepo" | "npm" | "default",
+  Partial<Record<NonNullable<Lint> | "default", Template<NonNullable<Test>>>>
+> = {
+  ignore: {
+    default: {
+      default: { name: ".dockerignore", path: "/dockerignore" },
+    },
+  },
+  monorepo: {
+    lint: {
+      test: { name: "Dockerfile", path: "/Dockerfile-mono-lint-test" },
+      default: { name: "Dockerfile", path: "/Dockerfile-mono-lint" },
+    },
+    default: {
+      test: { name: "Dockerfile", path: "/Dockerfile-mono-test" },
+      default: { name: "Dockerfile", path: "/Dockerfile-mono" },
+    },
+  },
+  npm: {
+    lint: {
+      test: { name: "Dockerfile", path: "/Dockerfile-npm-lint-test" },
+      default: { name: "Dockerfile", path: "/Dockerfile-npm-lint" },
+    },
+    default: {
+      test: { name: "Dockerfile", path: "/Dockerfile-npm-test" },
+      default: { name: "Dockerfile", path: "/Dockerfile-npm" },
+    },
+  },
+  default: {
+    lint: {
+      test: { name: "Dockerfile", path: "/Dockerfile-lint-test" },
+      default: { name: "Dockerfile", path: "/Dockerfile-lint" },
+    },
+    default: {
+      test: { name: "Dockerfile", path: "/Dockerfile-test" },
+      default: { name: "Dockerfile", path: "/Dockerfile" },
+    },
+  },
 } as const;
 
 const command = {
