@@ -11,37 +11,32 @@ import {
   installTmplt,
   setPkgName,
   setPkgVers,
-  setPkgScript,
   getPkgScript,
   setPkgScripts,
   setWkspaceBuiltDeps,
   rmPnpmNodeLinker,
   setPathAliasWithShared,
+  Template,
 } from "@/command";
 import { message as msg } from "@/message";
 
 async function run(this: Plugin, conf: Conf) {
   const s = spinner();
   s.start();
-
-  const type = this.name as PrimeType;
-  const npm = conf.npm;
-  const name = conf[type]?.name ?? type;
-  const cwd = conf.type !== meta.plugin.type.monorepo ? "." : name;
-  const typeFrmwk = (conf[type]?.framework ?? type) as TypeFrmwk;
-  const shared = (conf.monorepo?.types.length ?? 0) > 1;
-
   log.info(format(message.pluginStart, this.label));
-  await install(npm, typeFrmwk, cwd, s);
 
+  const { name, typeFrmwk, npm, cwd, shared } = parseConf(
+    conf,
+    this.name as PrimeType,
+  );
+
+  await install(typeFrmwk, npm, cwd, s);
   log.info(message.setPkg);
-  await setPkgName(npm, name, cwd);
+  await setPkgName(name, npm, cwd);
   await setPkgVers(npm, cwd);
-  await typeSetPkgScripts(npm, typeFrmwk, cwd);
-
+  await typeSetPkgScripts(typeFrmwk, npm, cwd);
   log.info(message.setWkspace);
   await setWkspace(typeFrmwk, cwd);
-
   if (shared) {
     log.info(message.setShared);
     await setShared(typeFrmwk, cwd);
@@ -51,22 +46,35 @@ async function run(this: Plugin, conf: Conf) {
   s.stop();
 }
 
+const parseConf = (conf: Conf, type: PrimeType) => {
+  const name = conf[type]?.name;
+  if (!name) {
+    throw new Error();
+  }
+  const typeFrmwk = (conf[type]?.framework ?? type) as TypeFrmwk;
+  const npm = conf.npm;
+  const cwd = conf.type !== meta.plugin.type.monorepo ? "." : name;
+  const shared = (conf.monorepo?.types.length ?? 0) > 1;
+  return { name, typeFrmwk, npm, cwd, shared };
+};
+
 const install = async (
-  npm: NPM,
   typeFrmwk: TypeFrmwk,
+  npm: NPM,
   cwd: string,
   s: Spinner,
 ) => {
   await installTmplt(base, template, typeFrmwk, cwd, true);
   if (command[typeFrmwk]) {
-    await create(npm, command[typeFrmwk], cwd, s);
+    await create(command[typeFrmwk], npm, cwd, s);
   }
-  if (!(typeFrmwk in template) && !command[typeFrmwk]) {
+  const tmplt = template as Template<TypeFrmwk>;
+  if (!tmplt[typeFrmwk] && !tmplt.default && !command[typeFrmwk]) {
     log.warn(format(message.noTmpltCmd, typeFrmwk));
   }
 };
 
-const create = async (npm: NPM, command: string, cwd: string, s: Spinner) => {
+const create = async (command: string, npm: NPM, cwd: string, s: Spinner) => {
   const cmd = format(command, npm, cwd);
   log.info(wrapAnsi(cmd, message.noteWidth));
   s.stop();
@@ -76,18 +84,16 @@ const create = async (npm: NPM, command: string, cwd: string, s: Spinner) => {
 };
 
 const typeSetPkgScripts = async (
-  npm: NPM,
   typeFrmwk: TypeFrmwk,
+  npm: NPM,
   cwd: string,
 ) => {
-  await setPkgScripts(npm, scripts, typeFrmwk, cwd);
+  await setPkgScripts(scripts, typeFrmwk, npm, cwd);
   if (
     typeFrmwk === value.framework.next &&
-    (await getPkgScript(npm, nextScript.copyDist.name, "."))
+    (await getPkgScript(nextScripts[0].name, npm, "."))
   ) {
-    for (const { name, script } of Object.values(nextScript)) {
-      await setPkgScript(npm, name, script, ".");
-    }
+    await setPkgScripts({ nextScripts }, "nextScripts", npm, ".");
   }
 };
 
@@ -166,11 +172,21 @@ for (const { name, label, frameworks } of [
         name: value.framework.next,
         label: "Next.js",
         skips: [
+          {
+            type: meta.plugin.type.frontend,
+            option: meta.plugin.option.type.deployment,
+            value: value.deployment.render,
+          },
           { option: meta.plugin.option.builder },
           { option: meta.plugin.option.test },
           { option: meta.plugin.option.lint },
         ],
-        keeps: [],
+        keeps: [
+          {
+            type: meta.plugin.type.frontend,
+            option: meta.plugin.option.type.deployment,
+          },
+        ],
         requires: [],
       },
     ],
@@ -216,8 +232,8 @@ for (const { name, label, frameworks } of [
 }
 for (const { name, label } of [
   { name: meta.plugin.type.node, label: "Node.js app" },
-  { name: meta.plugin.type.cli, label: "CLI tool" },
   { name: meta.plugin.type.lib, label: "Library" },
+  { name: meta.plugin.type.cli, label: "CLI tool" },
 ]) {
   regType({
     name,
@@ -245,18 +261,19 @@ type Spinner = ReturnType<typeof spinner>;
 
 const base =
   "https://raw.githubusercontent.com/bradhezh/prj-template/master/type" as const;
+const name = "type.tar" as const;
 
 const template = {
-  node: { name: "node.tar", path: "/node/node.tar" },
-  cli: { name: "cli.tar", path: "/cli/cli.tar" },
-  lib: { name: "lib.tar", path: "/lib/lib.tar" },
-  express: { name: "express.tar", path: "/express/express.tar" },
-  nest: { name: "nest.tar", path: "/nest/nest.tar" },
+  node: { name, path: "/node/ts/type.tar" },
+  lib: { name, path: "/lib/ts/type.tar" },
+  cli: { name, path: "/cli/ts/type.tar" },
+  express: { name, path: "/expr/ts/type.tar" },
+  nest: { name, path: "/nest/type.tar" },
 } as const;
 
 const patchTmplt = {
-  express: { name: "patch.tar", path: "/express/patch/patch.tar" },
-  nest: { name: "patch.tar", path: "/nest/patch/patch.tar" },
+  express: { name: "ptch.tar", path: "/shrd/ptch/expr/ts/ptch.tar" },
+  nest: { name: "ptch.tar", path: "/shrd/ptch/nest/ptch.tar" },
 } as const;
 
 const command: Partial<Record<TypeFrmwk, string>> = {
@@ -270,14 +287,14 @@ const scripts = {
   expo: [{ name: "dev", script: "expo start" }],
 } as const;
 
-const nextScript = {
-  copyDist: { name: "copy-dist", script: undefined },
-  build: {
+const nextScripts = [
+  { name: "copy-dist", script: undefined },
+  {
     name: "build",
     script: "pnpm --filter backend build && pnpm --filter frontend build",
   },
-  start: { name: "start:fe", script: "pnpm --filter frontend start" },
-} as const;
+  { name: "start:fe", script: "pnpm --filter frontend start" },
+] as const;
 
 const builtDeps = { nest: ["@nestjs/core"] } as const;
 

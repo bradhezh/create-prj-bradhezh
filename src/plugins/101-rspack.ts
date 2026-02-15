@@ -11,7 +11,13 @@ import {
   Plugin,
   PrimeType,
 } from "@/registry";
-import { installTmplt, setPkgScripts, setPkgDeps, Template } from "@/command";
+import {
+  installTmplt,
+  setPkgScripts,
+  setPkgDeps,
+  defKey,
+  Template,
+} from "@/command";
 import { message as msg } from "@/message";
 
 async function run(this: Plugin, conf: Conf) {
@@ -19,45 +25,58 @@ async function run(this: Plugin, conf: Conf) {
   s.start();
   log.info(format(message.pluginStart, this.label));
 
-  const npm = conf.npm;
-  const types = (conf.monorepo?.types ?? [conf.type]) as PrimeType[];
-  const skips = typeFrmwksSkip(meta.plugin.option.builder);
+  const { types, npm } = parseConf(conf);
 
-  for (const type of types) {
-    const typeFrmwk = (conf[type]?.framework ?? type) as TypeFrmwk;
-    if (skips.includes(typeFrmwk)) {
-      continue;
-    }
-
-    const name = conf[type]?.name ?? type;
-    const cwd = conf.type !== meta.plugin.type.monorepo ? "." : name;
-    const ts = conf[type]?.typescript as TsValue;
-
+  for (const { typeFrmwk, name, cwd, ts } of types) {
     log.info(format(message.forType, name));
     await install(typeFrmwk, ts, cwd);
-
     log.info(message.setPkg);
-    await setPkgScripts(npm, scripts, typeFrmwk, cwd);
-    await rsSetPkgDeps(npm, ts, cwd);
+    await setPkgScripts(scripts, typeFrmwk, npm, cwd);
+    await rsSetPkgDeps(ts, npm, cwd);
   }
+  conf[value.builder.rspack] = {};
 
   log.info(format(message.pluginFinish, this.label));
   s.stop();
 }
 
-const install = async (typeFrmwk: TypeFrmwk, ts: TsValue, cwd: string) => {
-  if (typeFrmwk === value.framework.nest) {
-    await installTmplt(base, { nest: nestTmplt }, "nest", cwd);
-  } else {
-    const tmplt = template[ts ?? "default"] ?? template.default!;
-    await installTmplt(base, tmplt, typeFrmwk, cwd);
+const parseConf = (conf: Conf) => {
+  const types = ((conf.monorepo?.types ?? [conf.type]) as PrimeType[])
+    .map((e) => ({
+      typeFrmwk: (conf[e]?.framework ?? e) as TypeFrmwk,
+      name: conf[e]?.name as string,
+      cwd: (conf.type !== meta.plugin.type.monorepo
+        ? "."
+        : conf[e]?.name) as string,
+      ts: conf[e]?.typescript as TsValue,
+    }))
+    .filter(
+      (e) =>
+        !typeFrmwksSkip(
+          undefined,
+          meta.plugin.option.builder,
+          undefined,
+        ).includes(e.typeFrmwk),
+    );
+  if (types.find((e) => !e.name)) {
+    throw new Error();
   }
+  const npm = conf.npm;
+  return { types, npm };
 };
 
-const rsSetPkgDeps = async (npm: NPM, ts: TsValue, cwd: string) => {
-  await setPkgDeps(npm, { default: pkgDeps }, "default", cwd);
+const install = async (typeFrmwk: TypeFrmwk, ts: TsValue, cwd: string) => {
+  const tmplt = template[typeFrmwk] ?? template.default;
+  if (!tmplt) {
+    throw new Error();
+  }
+  await installTmplt(base, tmplt, ts, cwd);
+};
+
+const rsSetPkgDeps = async (ts: TsValue, npm: NPM, cwd: string) => {
+  await setPkgDeps({ pkgDeps }, "pkgDeps", npm, cwd);
   if (ts !== meta.plugin.value.none) {
-    await setPkgDeps(npm, { default: tsPkgDeps }, "default", cwd);
+    await setPkgDeps({ tsPkgDeps }, "tsPkgDeps", npm, cwd);
   }
 };
 
@@ -82,41 +101,37 @@ regValue(
 type TypeFrmwk = PrimeType | NonNullable<FrmwkValue>;
 
 const base =
-  "https://raw.githubusercontent.com/bradhezh/prj-template/master/rspack" as const;
-
-const nestTmplt = {
-  name: "rspack.config.ts",
-  path: "/rspack-be-dec.config.ts",
-} as const;
+  "https://raw.githubusercontent.com/bradhezh/prj-template/master/rspk" as const;
+const name = "rspack.config.ts" as const;
+const nameJs = "rspack.config.js" as const;
 
 const template: Partial<
-  Record<NonNullable<TsValue> | "default", Template<Exclude<TypeFrmwk, "nest">>>
+  Record<TypeFrmwk | typeof defKey, Template<NonNullable<TsValue>>>
 > = {
-  none: {
-    cli: { name: "rspack.config.js", path: "/rspack-cli.config.js" },
-    lib: { name: "rspack.config.js", path: "/rspack-lib.config.js" },
-    express: { name: "rspack.config.js", path: "/rspack-be.config.js" },
-    default: { name: "rspack.config.js", path: "/rspack.config.js" },
+  nest: { default: { name, path: "/be/meta/rspack.config.ts" } },
+  lib: {
+    none: { name: nameJs, path: "/lib/no/rspack.config.js" },
+    metadata: { name, path: "/lib/meta/rspack.config.ts" },
+    default: { name, path: "/lib/ndec/rspack.config.ts" },
   },
-  metadata: {
-    cli: { name: "rspack.config.ts", path: "/rspack-cli-dec.config.ts" },
-    lib: { name: "rspack.config.ts", path: "/rspack-lib-dec.config.ts" },
-    express: { name: "rspack.config.ts", path: "/rspack-be-dec.config.ts" },
-    default: { name: "rspack.config.ts", path: "/rspack-dec.config.ts" },
+  cli: {
+    none: { name: nameJs, path: "/cli/no/rspack.config.js" },
+    metadata: { name, path: "/cli/meta/rspack.config.ts" },
+    default: { name, path: "/cli/ndec/rspack.config.ts" },
+  },
+  express: {
+    none: { name: nameJs, path: "/be/no/rspack.config.js" },
+    metadata: { name, path: "/be/meta/rspack.config.ts" },
+    default: { name, path: "/be/ndec/rspack.config.ts" },
   },
   default: {
-    cli: { name: "rspack.config.ts", path: "/rspack-cli.config.ts" },
-    lib: { name: "rspack.config.ts", path: "/rspack-lib.config.ts" },
-    express: { name: "rspack.config.ts", path: "/rspack-be.config.ts" },
-    default: { name: "rspack.config.ts", path: "/rspack.config.ts" },
+    none: { name: nameJs, path: "/def/no/rspack.config.js" },
+    metadata: { name, path: "/def/meta/rspack.config.ts" },
+    default: { name, path: "/def/ndec/rspack.config.ts" },
   },
 } as const;
 
 const scripts = {
-  cli: [
-    { name: "build", script: "rspack build" },
-    { name: "dev", script: "rspack dev" },
-  ],
   lib: [
     {
       name: "build",
@@ -125,6 +140,10 @@ const scripts = {
     },
     { name: "dev", script: "rspack dev" },
     { name: "dev:cli", script: "CLI=true rspack dev" },
+  ],
+  cli: [
+    { name: "build", script: "rspack build" },
+    { name: "dev", script: "rspack dev" },
   ],
   default: [
     { name: "build", script: "rspack build" },

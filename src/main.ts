@@ -15,8 +15,8 @@ export const main = async () => {
       await plugin.run(conf);
     }
   } catch (err: any) {
-    log.error(err.response?.data?.message || err.message || err);
-    log.error(err.stack);
+    console.log(err.response?.data?.message || err.message || err);
+    console.log(err.stack);
     process.exit(1);
   }
 };

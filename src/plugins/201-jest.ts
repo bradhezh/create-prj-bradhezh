@@ -18,6 +18,7 @@ import {
   setPkgScripts,
   setPkgDeps,
   setWkspaceBuiltDeps,
+  defKey,
   Template,
 } from "@/command";
 import { message as msg } from "@/message";
@@ -27,86 +28,119 @@ async function run(this: Plugin, conf: Conf) {
   s.start();
   log.info(format(message.pluginStart, this.label));
 
-  const npm = conf.npm;
-  const monorepo = conf.type === meta.plugin.type.monorepo;
-  const types0 = conf.monorepo?.types ?? [conf.type];
-  const types = (
-    types0.length <= 1 ? types0 : [...types0, meta.system.type.shared]
-  ) as TargetType[];
-  const withShared = types0.length <= 1 ? undefined : "withShared";
-  const skips = typeFrmwksSkip(meta.plugin.option.test);
+  const { monorepo, shared, types, npm } = await parseConf(conf);
 
-  for (const type of types) {
-    const typeFrmwk = (conf[type as PrimeType]?.framework ?? type) as TypeFrmwk;
-    if (skips.includes(typeFrmwk)) {
-      continue;
-    }
-
-    const name = conf[type as PrimeType]?.name ?? type;
-    const cwd = conf.type !== meta.plugin.type.monorepo ? "." : name;
-    const ts =
-      type !== meta.system.type.shared
-        ? (conf[type]?.typescript as TsValue)
-        : (await access(join(meta.system.type.shared, "tsconfig.json"))
-              .then(() => true)
-              .catch(() => false))
-          ? value.typescript.nodec
-          : meta.plugin.value.none;
-
+  for (const { typeFrmwk, name, cwd, ts, backend } of types) {
     log.info(format(message.forType, name));
-    await install(typeFrmwk, ts, withShared, cwd);
-
+    await install(ts, typeFrmwk, shared, cwd);
     log.info(message.setPkg);
-    await setPkgScripts(npm, { default: scripts.default }, "default", cwd);
-    await jeSetPkgDeps(npm, type, typeFrmwk, ts, cwd);
+    await setPkgScripts({ def: scripts.default }, "def", npm, cwd);
+    await jestSetPkgDeps(ts, backend, typeFrmwk, npm, cwd);
   }
   if (monorepo) {
-    await setPkgScripts(npm, { monorepo: scripts.monorepo }, "monorepo");
+    await setPkgScripts({ mono: scripts.monorepo }, "mono", npm);
   }
   log.info(message.setWkspace);
-  await setWkspaceBuiltDeps({ default: builtDeps }, "default");
+  await setWkspaceBuiltDeps({ builtDeps }, "builtDeps");
+  conf[value.test.jest] = {};
 
   log.info(format(message.pluginFinish, this.label));
   s.stop();
 }
 
+const parseConf = async (conf: Conf) => {
+  const types0 = (conf.monorepo?.types ?? [conf.type]) as PrimeType[];
+  const monorepo = conf.type === meta.plugin.type.monorepo;
+  const shared = types0.length > 1;
+  const types1 = types0
+    .map((e) => ({
+      typeFrmwk: (conf[e]?.framework ?? e) as TypeFrmwk,
+      name: conf[e]?.name as string,
+      cwd: (!monorepo ? "." : conf[e]?.name) as string,
+      ts: conf[e]?.typescript as TsValue,
+      backend: e === meta.plugin.type.backend,
+    }))
+    .filter(
+      (e) =>
+        !typeFrmwksSkip(undefined, meta.plugin.option.test, undefined).includes(
+          e.typeFrmwk,
+        ),
+    );
+  const types = !shared
+    ? types1
+    : [
+        ...types1,
+        {
+          typeFrmwk: meta.system.type.shared,
+          name: meta.system.type.shared,
+          cwd: meta.system.type.shared,
+          ts: (await access(join(meta.system.type.shared, "tsconfig.json"))
+            .then(() => true)
+            .catch(() => false))
+            ? value.typescript.nodec
+            : meta.plugin.value.none,
+          backend: false,
+        },
+      ];
+  if (types.find((e) => !e.name)) {
+    throw new Error();
+  }
+  const npm = conf.npm;
+  return { monorepo, shared, types, npm };
+};
+
 const install = async (
-  typeFrmwk: TypeFrmwk,
   ts: TsValue,
-  withShared: WithShared,
+  typeFrmwk: TypeFrmwk,
+  shared: boolean,
   cwd: string,
 ) => {
   if (typeFrmwk === value.framework.nest) {
-    await installTmplt(base, nestTmplt, withShared, cwd);
-    await installTmplt(base, { nest: nestSrcTmplt }, "nest", cwd, true);
+    await installTmplt(base, nestTmplt, shared ? "shared" : defKey, cwd);
+  } else if (typeFrmwk === meta.system.type.shared) {
+    await installTmplt(base, sharedTmplt, ts, cwd);
   } else {
-    const tmplt = template[ts ?? "default"] ?? template.default!;
-    const tmplt0 = tmplt[withShared ?? "default"] ?? tmplt.default!;
-    await installTmplt(base, tmplt0, typeFrmwk, cwd);
-    const tmplt1 = srcTmplt[ts ?? "default"] ?? srcTmplt.default!;
-    await installTmplt(base, tmplt1, typeFrmwk, cwd, true);
+    const tmplt = template[ts ?? defKey] ?? template.default;
+    if (!tmplt) {
+      throw new Error();
+    }
+    const tmplt0 =
+      tmplt[
+        typeFrmwk === meta.plugin.type.lib || typeFrmwk === meta.plugin.type.cli
+          ? "pkg"
+          : typeFrmwk
+      ] ?? tmplt.default;
+    if (!tmplt0) {
+      throw new Error();
+    }
+    await installTmplt(base, tmplt0, shared ? "shared" : defKey, cwd);
   }
+  const tmplt = srcTmplt[typeFrmwk] ?? srcTmplt.default;
+  if (!tmplt) {
+    throw new Error();
+  }
+  await installTmplt(base, tmplt, ts, cwd);
 };
 
-const jeSetPkgDeps = async (
-  npm: NPM,
-  type: TargetType,
-  typeFrmwk: TypeFrmwk,
+const jestSetPkgDeps = async (
   ts: TsValue,
+  backend: boolean,
+  typeFrmwk: TypeFrmwk,
+  npm: NPM,
   cwd: string,
 ) => {
-  await setPkgDeps(npm, { default: pkgDeps }, "default", cwd);
+  await setPkgDeps({ pkgDeps }, "pkgDeps", npm, cwd);
   if (ts !== meta.plugin.value.none) {
-    await setPkgDeps(npm, { default: tsPkgDeps }, "default", cwd);
+    await setPkgDeps({ tsPkgDeps }, "tsPkgDeps", npm, cwd);
   }
-  if (type === meta.plugin.type.backend) {
-    await setPkgDeps(npm, { default: bePkgDeps }, "default", cwd);
+  if (backend) {
+    await setPkgDeps({ bePkgDeps }, "bePkgDeps", npm, cwd);
     if (ts !== meta.plugin.value.none) {
-      await setPkgDeps(npm, { default: beTsPkgDeps }, "default", cwd);
+      await setPkgDeps({ beTsPkgDeps }, "beTsPkgDeps", npm, cwd);
     }
   }
   if (typeFrmwk === value.framework.nest) {
-    await setPkgDeps(npm, { default: nestPkgDeps }, "default", cwd);
+    await setPkgDeps({ nestPkgDeps }, "nestPkgDeps", npm, cwd);
   }
 };
 
@@ -128,85 +162,75 @@ regValue(
   meta.plugin.option.test,
 );
 
-type TargetType = PrimeType | typeof meta.system.type.shared;
-type TypeFrmwk = TargetType | NonNullable<FrmwkValue>;
-type WithShared = "withShared" | undefined;
+type TypeFrmwk =
+  | PrimeType
+  | typeof meta.system.type.shared
+  | NonNullable<FrmwkValue>;
 
 const base =
   "https://raw.githubusercontent.com/bradhezh/prj-template/master/jest" as const;
+const name = "jest.config.js" as const;
 
 const nestTmplt = {
-  withShared: {
-    name: "jest.config.js",
-    path: "/jest-with-shared-dec.config.js",
-  },
-  default: { name: "jest.config.js", path: "/jest-dec.config.js" },
+  shared: { name, path: "/cfg/meta/def/shrd/jest.config.js" },
+  default: { name, path: "/cfg/meta/def/no/jest.config.js" },
+} as const;
+
+const sharedTmplt = {
+  none: { name, path: "/cfg/no/jest.config.js" },
+  default: { name, path: "/cfg/shrd/jest.config.js" },
 } as const;
 
 const template: Partial<
   Record<
-    NonNullable<TsValue> | "default",
+    NonNullable<TsValue> | typeof defKey,
     Partial<
       Record<
-        NonNullable<WithShared> | "default",
-        Template<Exclude<TypeFrmwk, "nest">>
+        | Exclude<
+            TypeFrmwk,
+            typeof meta.plugin.type.lib | typeof meta.plugin.type.cli
+          >
+        | "pkg"
+        | typeof defKey,
+        Template<"shared" | typeof defKey>
       >
     >
   >
 > = {
-  none: {
-    default: {
-      default: { name: "jest.config.js", path: "/jest-js.config.js" },
-    },
-  },
+  none: { default: { default: { name, path: "/cfg/no/jest.config.js" } } },
   metadata: {
-    withShared: {
-      cli: {
-        name: "jest.config.js",
-        path: "/jest-pkg-with-shared-dec.config.js",
-      },
-      lib: {
-        name: "jest.config.js",
-        path: "/jest-pkg-with-shared-dec.config.js",
-      },
-      default: {
-        name: "jest.config.js",
-        path: "/jest-with-shared-dec.config.js",
-      },
+    pkg: {
+      shared: { name, path: "/cfg/meta/pkg/shrd/jest.config.js" },
+      default: { name, path: "/cfg/meta/pkg/no/jest.config.js" },
     },
     default: {
-      cli: { name: "jest.config.js", path: "/jest-pkg-dec.config.js" },
-      lib: { name: "jest.config.js", path: "/jest-pkg-dec.config.js" },
-      default: { name: "jest.config.js", path: "/jest-dec.config.js" },
+      shared: { name, path: "/cfg/meta/def/shrd/jest.config.js" },
+      default: { name, path: "/cfg/meta/def/no/jest.config.js" },
     },
   },
   default: {
-    withShared: {
-      cli: { name: "jest.config.js", path: "/jest-pkg-with-shared.config.js" },
-      lib: { name: "jest.config.js", path: "/jest-pkg-with-shared.config.js" },
-      shared: { name: "jest.config.js", path: "/jest-shared.config.js" },
-      default: { name: "jest.config.js", path: "/jest-with-shared.config.js" },
+    pkg: {
+      shared: { name, path: "/cfg/ndec/pkg/shrd/jest.config.js" },
+      default: { name, path: "/cfg/ndec/pkg/no/jest.config.js" },
     },
     default: {
-      cli: { name: "jest.config.js", path: "/jest-pkg.config.js" },
-      lib: { name: "jest.config.js", path: "/jest-pkg.config.js" },
-      default: { name: "jest.config.js", path: "/jest.config.js" },
+      shared: { name, path: "/cfg/ndec/def/shrd/jest.config.js" },
+      default: { name, path: "/cfg/ndec/def/no/jest.config.js" },
     },
   },
 } as const;
 
-const nestSrcTmplt = { name: "jest.tar", path: "/nest/jest.tar" } as const;
-
 const srcTmplt: Partial<
-  Record<NonNullable<TsValue> | "default", Template<Exclude<TypeFrmwk, "nest">>>
+  Record<TypeFrmwk | typeof defKey, Template<NonNullable<TsValue>>>
 > = {
-  none: {
-    express: { name: "jest.tar", path: "/backend/js/jest.tar" },
-    default: { name: "jest.tar", path: "/js/jest.tar" },
+  nest: { default: { name: "jest.tar", path: "/src/nest/jest.tar" } },
+  express: {
+    none: { name: "jest.tar", path: "/src/expr/js/jest.tar" },
+    default: { name: "jest.tar", path: "/src/expr/ts/jest.tar" },
   },
   default: {
-    express: { name: "jest.tar", path: "/backend/jest.tar" },
-    default: { name: "jest.tar", path: "/jest.tar" },
+    none: { name: "jest.tar", path: "/src/def/js/jest.tar" },
+    default: { name: "jest.tar", path: "/src/def/ts/jest.tar" },
   },
 } as const;
 
@@ -220,10 +244,9 @@ const pkgDeps = [
   { name: "@swc/jest", version: "^0", dev: true },
   { name: "jest", version: "^30", dev: true },
 ] as const;
-
 const tsPkgDeps = [{ name: "@types/jest", version: "^30", dev: true }] as const;
-const bePkgDeps = [{ name: "supertest", version: "^7", dev: true }] as const;
 
+const bePkgDeps = [{ name: "supertest", version: "^7", dev: true }] as const;
 const beTsPkgDeps = [
   { name: "@types/supertest", version: "^6", dev: true },
 ] as const;

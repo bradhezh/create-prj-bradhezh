@@ -13,18 +13,26 @@ async function run(this: Plugin, conf: Conf) {
   s.start();
   log.info(format(message.pluginStart, this.label));
 
-  const npm = conf.npm;
-  const name = conf.node!.name ?? meta.plugin.type.node;
-  const cwd = conf.type !== meta.plugin.type.monorepo ? "." : name;
-  const ts = conf.node!.typescript as Ts;
+  const { ts, name, npm, cwd } = parseConf(conf);
 
-  await reinstall(npm, name, ts, cwd);
+  await reinstall(ts, name, npm, cwd);
 
   log.info(format(message.pluginFinish, this.label));
   s.stop();
 }
 
-const reinstall = async (npm: NPM, name: string, ts: Ts, cwd: string) => {
+const parseConf = (conf: Conf) => {
+  const ts = conf.node!.typescript as Ts;
+  const name = conf.node!.name;
+  if (!name) {
+    throw new Error();
+  }
+  const npm = conf.npm;
+  const cwd = conf.type !== meta.plugin.type.monorepo ? "." : name;
+  return { ts, name, npm, cwd };
+};
+
+const reinstall = async (ts: Ts, name: string, npm: NPM, cwd: string) => {
   if (ts === value.typescript.metadata) {
     await setTsOptions(
       { experimentalDecorators: true, emitDecoratorMetadata: true },
@@ -35,9 +43,11 @@ const reinstall = async (npm: NPM, name: string, ts: Ts, cwd: string) => {
     for (const replace of replaces) {
       await rm(join(cwd, replace), { recursive: true, force: true });
     }
-    await installTmplt(base, { node: template }, "node", cwd, true);
-    await setPkgName(npm, name, cwd);
+    await installTmplt(base, { template }, "template", cwd, true);
+    await setPkgName(name, npm, cwd);
     await setPkgVers(npm, cwd);
+  } else if (ts !== value.typescript.nodec) {
+    throw new Error();
   }
 };
 
@@ -83,8 +93,8 @@ regOption(
 type Ts = NonNullable<TsValue>;
 
 const base =
-  "https://raw.githubusercontent.com/bradhezh/prj-template/master/type/node/js/node.tar" as const;
-const template = { name: "node.tar" } as const;
+  "https://raw.githubusercontent.com/bradhezh/prj-template/master/type/node/js/type.tar" as const;
+const template = { name: "type.tar" } as const;
 
 const replaces = ["package.json", "tsconfig.json", "src"] as const;
 

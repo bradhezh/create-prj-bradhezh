@@ -1,12 +1,6 @@
 import { meta } from "@/registry";
 
-export const option = {
-  deploySrc: "deploySrc",
-  reactDeploy: "reactDeploy",
-  nextDeploy: "nextDeploy",
-  expoDeploy: "expoDeploy",
-  gitVis: "gitVis",
-} as const;
+export const option = { deploySrc: "deploySrc", gitVis: "gitVis" } as const;
 
 export const value = {
   framework: {
@@ -23,13 +17,13 @@ export const value = {
     expo: "expo",
     npmjs: "npmjs",
   },
-  deploySrc: { docker: "docker", example: "example" },
+  deploySrc: { ghcr: "ghcr", dkrhub: "dkrhub", repo: "repo" },
   builder: { rspack: "rspack" },
   test: { jest: "jest" },
   lint: { eslint: "eslint" },
-  git: { github: "github" },
+  git: { github: "github", gitlab: "gitlab" },
   gitVis: { public: "public", private: "private" },
-  cicd: { ghaction: "ghaction" },
+  cicd: { gha: "gha", circle: "circle" },
   orm: { prisma: "prisma" },
   done: "done",
 } as const;
@@ -66,26 +60,23 @@ export type OrmValue =
   | typeof meta.plugin.value.none
   | undefined;
 
-export const rtConf = {
-  github: "github",
-  dkrUsername: "dkrUsername",
-  dkrToken: "dkrToken",
-  dkrReadToken: "dkrReadToken",
-  example: "example",
-} as const;
-export type RtConf = Partial<{
-  github: typeof value.done;
-  dkrUsername: string;
-  dkrToken: string;
-  dkrReadToken: string;
-  example: string;
-}>;
-export type GitHubData = RtConf["github"];
-export type GitData = GitHubData | undefined;
-export type DkrData = Partial<{
-  username: RtConf["dkrUsername"];
-  token: RtConf["dkrToken"];
-  readToken: RtConf["dkrReadToken"];
-}>;
-export type ExampleData = RtConf["example"];
-export type DeploySrcData = DkrData | ExampleData | undefined;
+type RtEmpty = { [K in never]: never } | undefined;
+export type DkrValue =
+  | {
+      registry?: string;
+      user: string;
+      readToken: string;
+      token?: string;
+      image?: string;
+    }
+  | undefined;
+export type DeploySrcConf = DkrValue | RtEmpty;
+export type GitSvcValue =
+  | { repo?: string; readToken?: string; token?: string }
+  | undefined;
+export type GitConf = GitSvcValue | RtEmpty;
+export type RenderValue =
+  | { owner: string; service: string; token: string; cred?: string }
+  | undefined;
+export type CLIDeployValue = { token?: string } | undefined;
+export type DeployConf = RenderValue | CLIDeployValue | RtEmpty;

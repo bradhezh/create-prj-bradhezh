@@ -16,169 +16,195 @@ async function run(this: Plugin, conf: Conf) {
   s.start();
   log.info(format(message.pluginStart, this.label));
 
-  const npm = conf.npm;
-  const types = conf.monorepo!.types as PrimeType[];
-  const defType = types[0];
-  const defTypeName = conf[defType]?.name ?? defType;
-  const monoName = conf.monorepo!.name;
-  const beName = conf.backend?.name ?? meta.plugin.type.backend;
-  const feName = conf.frontend?.name ?? meta.plugin.type.frontend;
-  const mName = conf.mobile?.name ?? meta.plugin.type.mobile;
-  const packages = types.map((e) => conf[e]?.name ?? e);
-  const jsTypes = types.filter(
-    (e) => conf[e]?.typescript === meta.plugin.value.none,
-  );
-
-  await installTmplt(base, { monorepo: template.monorepo }, "monorepo");
-
-  log.info(message.setPkg);
-  await setPkgName(npm, monoName);
-  await setPkgVers(npm);
-  await monoSetPkgScripts(
-    npm,
-    types,
-    defType,
-    defTypeName,
+  const {
+    name,
+    names,
     beName,
     feName,
     mName,
-  );
+    defType,
+    defName,
+    npm,
+    shared,
+    sharedJs,
+  } = parseConf(conf);
 
+  await installTmplt(base, { mono: template.monorepo }, "mono");
+  log.info(message.setPkg);
+  await setPkgName(name, npm);
+  await setPkgVers(npm);
+  await monoSetPkgScripts(beName, feName, mName, defType, defName, npm);
   log.info(message.setWkspace);
-  await createWkspace(packages);
-
-  if (types.length > 1) {
+  await createWkspace(names);
+  if (shared) {
     log.info(message.setShared);
-    await createShared(npm, types, jsTypes);
+    await createShared(sharedJs, npm);
   }
 
   log.info(format(message.pluginFinish, this.label));
   s.stop();
 }
 
-const monoSetPkgScripts = async (
-  npm: NPM,
-  types: PrimeType[],
-  defType: PrimeType,
-  defTypeName: string,
-  beName: string,
-  feName: string,
-  mName: string,
-) => {
-  let defName, noStart;
+const parseConf = (conf: Conf) => {
+  const name = conf.monorepo!.name;
+  if (!name) {
+    throw new Error();
+  }
+  const types = conf.monorepo!.types as PrimeType[];
+  const names = types.map((e) => conf[e]?.name) as string[];
+  if (names.find((e) => !e) || new Set(names).size !== names.length) {
+    throw new Error();
+  }
+  let beName;
+  let defName;
   if (types.includes(meta.plugin.type.backend)) {
+    beName = conf.backend?.name;
+    if (!beName) {
+      throw new Error();
+    }
     defName = beName;
-  } else if (types.includes(meta.plugin.type.frontend)) {
-    defName = feName;
-  } else if (types.length === 1) {
-    defName = defTypeName;
-    if (
-      defType === meta.plugin.type.mobile ||
-      defType === meta.plugin.type.cli ||
-      defType === meta.plugin.type.lib
-    ) {
-      noStart = true;
+  }
+  let feName;
+  if (types.includes(meta.plugin.type.frontend)) {
+    feName = conf.frontend?.name;
+    if (!feName) {
+      throw new Error();
+    }
+    void (defName || (defName = feName));
+  }
+  let mName;
+  if (types.includes(meta.plugin.type.mobile)) {
+    mName = conf.mobile?.name;
+    if (!mName) {
+      throw new Error();
     }
   }
-  await setBuild(npm, types, beName, feName, mName, defName);
-  await setDev(npm, types, feName, mName, defName);
-  await setStart(npm, defName, noStart);
+  const defType = types[0];
+  if (!defType) {
+    throw new Error();
+  }
+  if (!defName && types.length === 1) {
+    defName = conf[defType]?.name;
+    if (!defName) {
+      throw new Error();
+    }
+  }
+  const npm = conf.npm;
+  const shared = types.length > 1;
+  const sharedJs =
+    types.filter((e) => conf[e]?.typescript !== meta.plugin.value.none)
+      .length <= 1;
+  return {
+    name,
+    names,
+    beName,
+    feName,
+    mName,
+    defType,
+    defName,
+    npm,
+    shared,
+    sharedJs,
+  };
+};
+
+const monoSetPkgScripts = async (
+  beName: string | undefined,
+  feName: string | undefined,
+  mName: string | undefined,
+  defType: PrimeType,
+  defName: string | undefined,
+  npm: NPM,
+) => {
+  await setBuild(beName, feName, defName, mName, npm);
+  await setDev(defName, feName, mName, npm);
+  await setStart(defName, defType, npm);
 };
 
 const setBuild = async (
+  beName: string | undefined,
+  feName: string | undefined,
+  defName: string | undefined,
+  mName: string | undefined,
   npm: NPM,
-  types: PrimeType[],
-  beName: string,
-  feName: string,
-  mName: string,
-  defName?: string,
 ) => {
-  if (
-    types.includes(meta.plugin.type.backend) &&
-    types.includes(meta.plugin.type.frontend)
-  ) {
+  if (beName && feName) {
     await setPkgScript(
-      npm,
       script.copyDist.name,
       format(script.copyDist.script, beName, feName, beName),
+      npm,
     );
     await setPkgScript(
-      npm,
       script.build.name,
       format(script.build.fullstack, beName, feName),
+      npm,
     );
   } else if (defName && defName !== mName) {
     await setPkgScript(
-      npm,
       script.build.name,
       format(script.build.script, defName),
+      npm,
     );
   }
 };
 
 const setDev = async (
+  defName: string | undefined,
+  feName: string | undefined,
+  mName: string | undefined,
   npm: NPM,
-  types: PrimeType[],
-  feName: string,
-  mName: string,
-  defName?: string,
 ) => {
   void (
     defName &&
     (await setPkgScript(
-      npm,
       script.dev.name,
       format(script.dev.script, defName),
+      npm,
     ))
   );
-  if (types.includes(meta.plugin.type.frontend) && feName !== defName) {
+  if (feName && feName !== defName) {
     await setPkgScript(
-      npm,
       `${script.dev.name}${script.frontend.suffix}`,
       format(script.dev.script, feName),
+      npm,
     );
   }
-  if (types.includes(meta.plugin.type.mobile) && mName !== defName) {
+  if (mName && mName !== defName) {
     await setPkgScript(
-      npm,
       `${script.dev.name}${script.mobile.suffix}`,
       format(script.dev.script, mName),
+      npm,
     );
   }
 };
 
-const setStart = async (npm: NPM, defName?: string, noStart?: boolean) => {
-  if (defName && !noStart) {
+const setStart = async (
+  defName: string | undefined,
+  defType: PrimeType,
+  npm: NPM,
+) => {
+  if (
+    defName &&
+    defType !== meta.plugin.type.lib &&
+    defType !== meta.plugin.type.cli &&
+    defType !== meta.plugin.type.mobile
+  ) {
     await setPkgScript(
-      npm,
       script.start.name,
       format(script.start.script, defName),
+      npm,
     );
   }
 };
 
-const createShared = async (
-  npm: NPM,
-  types: PrimeType[],
-  jsTypes: PrimeType[],
-) => {
-  if (types.filter((e) => !jsTypes.includes(e)).length > 1) {
-    await installTmplt(
-      base,
-      { shared: template.shared },
-      "shared",
-      meta.system.type.shared,
-      true,
-    );
-  } else {
-    await installTmplt(
-      base,
-      { jsShared: template.jsShared },
-      "jsShared",
-      meta.system.type.shared,
-      true,
-    );
-  }
+const createShared = async (sharedJs: boolean, npm: NPM) => {
+  await installTmplt(
+    base,
+    { shared: sharedJs ? template.sharedJs : template.shared },
+    "shared",
+    meta.system.type.shared,
+    true,
+  );
   await setPkgVers(npm, meta.system.type.shared);
 };
 
@@ -195,12 +221,13 @@ regType({
 });
 
 const base =
-  "https://raw.githubusercontent.com/bradhezh/prj-template/master/type/monorepo" as const;
+  "https://raw.githubusercontent.com/bradhezh/prj-template/master/type" as const;
+const name = "type.tar" as const;
 
 const template = {
-  monorepo: { name: "package.json", path: "/package.json" },
-  shared: { name: "shared.tar", path: "/shared/shared.tar" },
-  jsShared: { name: "shared.tar", path: "/shared/js/shared.tar" },
+  monorepo: { name: "package.json", path: "/mono/package.json" },
+  shared: { name, path: "/shrd/ts/type.tar" },
+  sharedJs: { name, path: "/shrd/js/type.tar" },
 } as const;
 
 const script = {

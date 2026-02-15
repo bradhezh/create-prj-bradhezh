@@ -7,8 +7,8 @@ export const meta = {
       frontend: "frontend",
       mobile: "mobile",
       node: "node",
-      cli: "cli",
       lib: "lib",
+      cli: "cli",
       monorepo: "monorepo",
     },
     option: {
@@ -57,11 +57,21 @@ export type Conf = {
   Record<
     PrimeType,
     Partial<Record<TypeOption, string>> &
-      Partial<Record<string, string | string[]>>
+      Partial<
+        Record<
+          string,
+          string | string[] | Partial<Record<string, string | string[]>>
+        >
+      >
   >
 > &
   Partial<Record<NonTypeOption, string>> &
-  Partial<Record<string, string | string[]>>;
+  Partial<
+    Record<
+      string,
+      string | string[] | Partial<Record<string, string | string[]>>
+    >
+  >;
 
 export type Category = keyof typeof meta.system.option.category;
 
@@ -74,10 +84,11 @@ type Pos = { mode: PosMode; refs?: string[] };
 type QueueElem = { name: string; label: string; pos?: Pos };
 export type Plugin = QueueElem & { run: (conf: Conf) => Promise<void> };
 export type Value = QueueElem & {
-  skips: { option: string; type?: string }[];
-  keeps: { option: string; type?: string }[];
+  skips: { type?: string; option?: string; value?: string }[];
+  keeps: { type?: string; option?: string; value?: string }[];
   requires: { option: string; type?: string }[];
   plugin?: Plugin;
+  disabled?: boolean;
 };
 export type Option = QueueElem & {
   plugin?: Plugin;
@@ -99,7 +110,29 @@ export const regType = (type: Type) => {
   if (Object.keys(meta.system.type).includes(type.name)) {
     throw new Error(message.sysType);
   }
-  addInQueue(options.type, type);
+  if (
+    [...type.skips, ...type.keeps].find(
+      (e) => (!e.type && !e.option && !e.value) || (e.value && !e.option),
+    )
+  ) {
+    throw new Error(message.invSkipOrKeep);
+  }
+  const type0 = { ...type, options: [] };
+  addInQueue(options.type, type0);
+  for (const option of type.options) {
+    const opt = { ...option, values: [] };
+    addInQueue(type0.options, opt);
+    for (const value of option.values) {
+      if (
+        [...value.skips, ...value.keeps].find(
+          (e) => (!e.type && !e.option && !e.value) || (e.value && !e.option),
+        )
+      ) {
+        throw new Error(message.invSkipOrKeep);
+      }
+      addInQueue(opt.values, value);
+    }
+  }
 };
 
 export const regOption = (
@@ -107,11 +140,32 @@ export const regOption = (
   category: Category,
   type?: string,
 ) => {
+  if (category === meta.system.option.category.type && !type) {
+    throw new Error(message.typeRequired);
+  }
   const opts = getOptionsForReg(option.name, category, type);
-  addInQueue(opts, option);
+  const opt = { ...option, values: [] };
+  addInQueue(opts, opt);
+  for (const value of option.values) {
+    if (
+      [...value.skips, ...value.keeps].find(
+        (e) => (!e.type && !e.option && !e.value) || (e.value && !e.option),
+      )
+    ) {
+      throw new Error(message.invSkipOrKeep);
+    }
+    addInQueue(opt.values, value);
+  }
 };
 
 export const regValue = (value: Value, option: string, type?: string) => {
+  if (
+    [...value.skips, ...value.keeps].find(
+      (e) => (!e.type && !e.option && !e.value) || (e.value && !e.option),
+    )
+  ) {
+    throw new Error(message.invSkipOrKeep);
+  }
   const opt = getOption(option, type);
   addInQueue(opt.values, value);
 };
@@ -137,55 +191,93 @@ export const addInQueue = (queue: QueueElem[], elem: QueueElem) => {
 };
 
 export const adjustOptions = (conf: Conf, value: Value) => {
-  for (const { option, type } of value.skips) {
+  for (const { type, option, value: val } of value.skips) {
     if (
-      keptOrRequiredInTypes(conf, option, type) ||
-      keptOrRequiredInOptions(conf, option, type, [
+      keptOrRequiredInTypes(conf, type, option, val) ||
+      keptOrRequiredInOptions(conf, type, option, val, [
         ...options.compulsory,
         ...options.optional,
       ])
     ) {
       continue;
     }
-    const opt = getOption(option, type);
-    opt.disabled = true;
+    getElem(type, option, val).disabled = true;
   }
-  for (const { option, type } of value.keeps) {
-    const opt = getOption(option, type);
-    opt.disabled = false;
+  for (const { type, option, value: val } of value.keeps) {
+    getElem(type, option, val).disabled = false;
   }
   for (const { option, type } of value.requires) {
     const opt = getOption(option, type);
     opt.disabled = false;
     opt.required = true;
+    const val = opt.values.find((e) => e.name === meta.plugin.value.none);
+    if (!val) {
+      continue;
+    }
+    val.disabled = true;
   }
 };
 
-export const typeFrmwksSkip = (option: string) => {
+export const getElem = (
+  type: string | undefined,
+  option: string | undefined,
+  value: string | undefined,
+) => {
+  if ((!type && !option && !value) || (value && !option)) {
+    throw new Error();
+  }
+  if (!option) {
+    const type0 = options.type.find((e) => e.name === type!);
+    if (!type0) {
+      throw new Error(message.typeNotExist);
+    }
+    return type0;
+  }
+  const opt = getOption(option, type);
+  if (!value) {
+    return opt;
+  }
+  const val = opt.values.find((e) => e.name === value);
+  if (!val) {
+    throw new Error(message.valueNotExist);
+  }
+  return val;
+};
+
+export const typeFrmwksSkip = (
+  type: string | undefined,
+  option: string | undefined,
+  value: string | undefined,
+) => {
   return [
     ...options.type
-      .filter((type) => type.skips.find((e) => e.option === option && !e.type))
-      .map((type) => type.name),
+      .filter((type0) =>
+        type0.skips.find(
+          (e) => e.type === type && e.option === option && e.value === value,
+        ),
+      )
+      .map((type0) => type0.name),
     ...options.type
-      .map((type) => type.options)
+      .map((type0) => type0.options)
       .flat()
       .filter((opt) => opt.name === meta.plugin.option.type.framework)
       .map((opt) => opt.values)
       .flat()
-      .filter((v) => v.skips.find((e) => e.option === option && !e.type))
-      .map((v) => v.name),
+      .filter((val) =>
+        val.skips.find(
+          (e) => e.type === type && e.option === option && e.value === value,
+        ),
+      )
+      .map((val) => val.name),
   ];
 };
 
 const getOptionsForReg = (
   option: string,
   category: Category,
-  type?: string,
+  type: string | undefined,
 ) => {
   if (category === meta.system.option.category.type) {
-    if (!type) {
-      throw new Error(message.typeRequired);
-    }
     const type0 = options.type.find((e) => e.name === type);
     if (!type0) {
       throw new Error(message.typeNotExist);
@@ -249,25 +341,39 @@ const reSort = (queue: QueueElem[], elem: QueueElem, seen = new Set()) => {
   }
 };
 
-const keptOrRequiredInTypes = (conf: Conf, option: string, type?: string) => {
+const keptOrRequiredInTypes = (
+  conf: Conf,
+  type: string | undefined,
+  option: string | undefined,
+  value: string | undefined,
+) => {
   const types = [conf.type, ...(conf.monorepo?.types ?? [])];
   const types0 = options.type.filter((type0) => types.includes(type0.name));
   return (
     types0.find(
       (type0) =>
-        type0.keeps.find((e) => e.option === option && e.type === type) ||
-        type0.requires.find((e) => e.option === option && e.type === type),
+        type0.keeps.find(
+          (e) => e.type === type && e.option === option && e.value === value,
+        ) || type0.requires.find((e) => e.type === type && e.option === option),
     ) ||
     types0.find((type0) =>
-      keptOrRequiredInOptions(conf, option, type, type0.options, type0.name),
+      keptOrRequiredInOptions(
+        conf,
+        type,
+        option,
+        value,
+        type0.options,
+        type0.name,
+      ),
     )
   );
 };
 
 const keptOrRequiredInOptions = (
   conf: Conf,
-  option: string,
   type: string | undefined,
+  option: string | undefined,
+  value: string | undefined,
   opts: Option[],
   ofType?: string,
 ) => {
@@ -276,13 +382,13 @@ const keptOrRequiredInOptions = (
     return false;
   }
   return opts.find((opt) => {
-    const value =
-      opt.name in optConf &&
-      opt.values.find((v) => v.name === optConf[opt.name]);
+    const val = opt.values.find((e) => e.name === optConf[opt.name]);
     return (
-      value &&
-      (value.keeps.find((e) => e.option === option && e.type === type) ||
-        value.requires.find((e) => e.option === option && e.type === type))
+      val &&
+      (val.keeps.find(
+        (e) => e.type === type && e.option === option && e.value === value,
+      ) ||
+        val.requires.find((e) => e.type === type && e.option === option))
     );
   });
 };

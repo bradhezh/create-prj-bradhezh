@@ -5,12 +5,15 @@ import { value } from "./const";
 import { regValue, meta, Conf, Plugin } from "@/registry";
 import { message } from "@/message";
 
-async function run(this: Plugin, _conf: Conf) {
+async function run(this: Plugin, conf: Conf) {
   const s = spinner();
   s.start();
   log.info(format(message.pluginStart, this.label));
 
-  await Promise.resolve();
+  //const { } = await parseConf(conf);
+
+  await Promise.resolve(conf);
+  conf[value.orm.prisma] = {};
 
   log.info(format(message.pluginFinish, this.label));
   s.stop();

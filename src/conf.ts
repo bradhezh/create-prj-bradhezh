@@ -1,4 +1,4 @@
-import { group, text, select, multiselect, cancel, log } from "@clack/prompts";
+import { group, text, select, multiselect, log } from "@clack/prompts";
 import { basename } from "node:path";
 import { format } from "node:util";
 import wrapAnsi from "wrap-ansi";
@@ -13,26 +13,21 @@ import {
   Plugin,
   Option,
   Value,
-  Category,
-  PrimeType,
 } from "@/registry";
+import { onCancel } from "@/command";
 import { message } from "@/message";
 
 export const plugins: Plugin[] = [];
 
 export const config = async () => {
-  const conf: Conf = await init();
+  const conf = init();
   await confTypes(conf);
-  await confOptions(
-    conf,
-    options.compulsory,
-    meta.system.option.category.compulsory,
-  );
+  await confOptions(conf, options.compulsory);
   await confOptional(conf);
   return conf;
 };
 
-const init = async () => {
+const init = () => {
   let npm;
   if (process.env.npm_config_user_agent?.includes(NPM.pnpm)) {
     npm = NPM.pnpm;
@@ -41,52 +36,36 @@ const init = async () => {
   } else {
     throw new Error(message.pmUnsupported);
   }
-  const { type } = await typePrompt();
-  if (type.name === meta.plugin.type.monorepo && npm !== NPM.pnpm) {
-    throw new Error(message.pnpmRequired);
-  }
-  const conf = { npm, type: type.name };
-  adjustOptions(conf, type);
-  void (type.plugin && addInQueue(plugins, type.plugin));
-  return conf;
+  return { npm, type: "" };
 };
 
 const confTypes = async (conf: Conf) => {
-  const types: string[] = [];
+  const { type } = await typePrompt();
+  if (type.name === meta.plugin.type.monorepo && conf.npm !== NPM.pnpm) {
+    throw new Error(message.pnpmRequired);
+  }
+  conf.type = type.name;
+  adjustOptions(conf, type);
+  void (type.plugin && addInQueue(plugins, type.plugin));
+
+  const types = [type];
   let monoLabel;
-  if (conf.type !== meta.plugin.type.monorepo) {
-    types.push(conf.type);
-  } else {
+  if (conf.type === meta.plugin.type.monorepo) {
     const { name, types: types0 } = await monoPrompt();
     conf.monorepo = { name, types: types0.map((e) => e.name) };
     for (const type of types0) {
       adjustOptions(conf, type);
       void (type.plugin && addInQueue(plugins, type.plugin));
     }
-    types.push(...conf.monorepo.types);
-    const monorepo = options.type.find(
-      (e) => e.name === meta.plugin.type.monorepo,
-    )!;
-    monoLabel = monorepo.label;
-    await confOptions(
-      conf,
-      monorepo.options,
-      meta.system.option.category.type,
-      monorepo.name,
-      monoLabel,
-    );
+    types.push(...types0);
+    monoLabel = type.label;
   }
 
   for (const type of types) {
-    conf[type as PrimeType] = {};
-    const type0 = options.type.find((e) => e.name === type)!;
-    await confOptions(
-      conf,
-      type0.options,
-      meta.system.option.category.type,
-      type,
-      monoLabel ?? type0.label,
-    );
+    if (!conf[type.name]) {
+      conf[type.name] = {};
+    }
+    await confOptions(conf, type.options, type.name, monoLabel ?? type.label);
   }
 };
 
@@ -95,23 +74,15 @@ type OptionConf = Record<string, string | string[]>;
 const confOptions = async (
   conf: Conf,
   opts: Option[],
-  category: Category,
   type?: string,
   typeLabel?: string,
 ) => {
-  const opts0 = opts.filter((e) => !e.disabled);
-  if (!opts0.length) {
-    return;
-  }
-  const arg = optionPromptArg(conf, category, type, typeLabel);
-  const optConf = (
-    category !== meta.system.option.category.type ? conf : conf[type!]
-  ) as OptionConf;
-  for (const opt of opts0) {
+  const optConf = (!type ? conf : conf[type]) as OptionConf;
+  for (const opt of opts) {
     if (opt.disabled) {
       continue;
     }
-    const answer = await optionPrompt(opt, arg);
+    const answer = await optionPrompt(conf, opt, type, typeLabel);
     setOptionValues(conf, optConf, opt, answer);
   }
 };
@@ -161,7 +132,7 @@ const confOptional = async (conf: Conf) => {
   );
   const { optional: optl } = await optionalPrompt(defOpts);
   if (optl === optional.manual.value) {
-    await confOptions(conf, opts, meta.system.option.category.optional);
+    await confOptions(conf, opts);
     return;
   }
   if (optl === optional.default.value) {
@@ -178,7 +149,6 @@ const confOptional = async (conf: Conf) => {
       ? opts
       : opts.filter((e) => !defOpts.find((e0) => e0.name === e.name))
     ).filter((e) => e.required),
-    meta.system.option.category.optional,
   );
 };
 
@@ -188,7 +158,9 @@ const typePrompt = () => {
       type: () =>
         select({
           message: message.type.label,
-          options: options.type.map((e) => ({ value: e, label: e.label })),
+          options: options.type
+            .filter((e) => !e.disabled)
+            .map((e) => ({ value: e, label: e.label })),
         }),
     },
     { onCancel },
@@ -208,7 +180,7 @@ const monoPrompt = () => {
         multiselect({
           message: message.monorepo.types.label,
           options: options.type
-            .filter((e) => e.name !== meta.plugin.type.monorepo)
+            .filter((e) => !e.disabled && e.name !== meta.plugin.type.monorepo)
             .map((e) => ({ value: e, label: e.label })),
         }),
     },
@@ -216,30 +188,13 @@ const monoPrompt = () => {
   );
 };
 
-type OptionPromptParam = { label: string; iniName: string };
-
-const optionPromptArg = (
-  conf: Conf,
-  category: Category,
-  type?: string,
-  typeLabel?: string,
-) => {
-  return {
-    label:
-      category !== meta.system.option.category.type ? "" : `${typeLabel} | `,
-    iniName:
-      category !== meta.system.option.category.type
-        ? ""
-        : conf.type === meta.plugin.type.monorepo
-          ? type!
-          : basename(process.cwd()),
-  };
-};
-
 const optionPrompt = (
+  conf: Conf,
   option: Option,
-  { label, iniName }: OptionPromptParam,
+  type: string | undefined,
+  typeLabel: string | undefined,
 ) => {
+  const label = !typeLabel ? "" : `${typeLabel} | `;
   return group(
     {
       [option.name]: () =>
@@ -248,7 +203,11 @@ const optionPrompt = (
               message: `${label}${option.label}`,
               initialValue:
                 option.initial ??
-                (option.name !== meta.plugin.option.type.name ? "" : iniName),
+                (!type || option.name !== meta.plugin.option.type.name
+                  ? ""
+                  : conf.type === meta.plugin.type.monorepo
+                    ? type
+                    : basename(process.cwd())),
               validate: option.optional
                 ? undefined
                 : (value?: string) => (value ? undefined : message.validate),
@@ -256,22 +215,15 @@ const optionPrompt = (
           : !option.multiple
             ? select({
                 message: `${label}${option.label}`,
-                options: (!option.required
-                  ? option.values
-                  : option.values.filter(
-                      (e) => e.name !== meta.plugin.value.none,
-                    )
-                ).map((e) => ({
-                  value: e,
-                  label: e.label,
-                })),
+                options: option.values
+                  .filter((e) => !e.disabled)
+                  .map((e) => ({ value: e, label: e.label })),
               })
             : multiselect({
                 message: `${label}${option.label}`,
-                options: option.values.map((e) => ({
-                  value: e,
-                  label: e.label,
-                })),
+                options: option.values
+                  .filter((e) => !e.disabled)
+                  .map((e) => ({ value: e, label: e.label })),
               }),
     },
     { onCancel },
@@ -329,9 +281,4 @@ const hintOptional = (opts: Option[]) => {
       message.noteWidth,
     ),
   );
-};
-
-const onCancel = () => {
-  cancel(message.opCanceled);
-  process.exit(0);
 };

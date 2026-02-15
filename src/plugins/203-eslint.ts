@@ -13,7 +13,13 @@ import {
   Plugin,
   PrimeType,
 } from "@/registry";
-import { installTmplt, setPkgScripts, setPkgDeps, Template } from "@/command";
+import {
+  installTmplt,
+  setPkgScripts,
+  setPkgDeps,
+  defKey,
+  Template,
+} from "@/command";
 import { message as msg } from "@/message";
 
 async function run(this: Plugin, conf: Conf) {
@@ -21,62 +27,92 @@ async function run(this: Plugin, conf: Conf) {
   s.start();
   log.info(format(message.pluginStart, this.label));
 
-  const npm = conf.npm;
-  const monorepo = conf.type === meta.plugin.type.monorepo;
-  const types0 = conf.monorepo?.types ?? [conf.type];
-  const types = (
-    types0.length <= 1 ? types0 : [...types0, meta.system.type.shared]
-  ) as TargetType[];
-  const skips = typeFrmwksSkip(meta.plugin.option.lint);
+  const { monorepo, types, test, npm } = await parseConf(conf);
 
-  for (const type of types) {
-    const typeFrmwk = (conf[type as PrimeType]?.framework ?? type) as TypeFrmwk;
-    if (skips.includes(typeFrmwk)) {
-      continue;
-    }
-
-    const name = conf[type as PrimeType]?.name ?? type;
-    const cwd = conf.type !== meta.plugin.type.monorepo ? "." : name;
-    const ts =
-      type !== meta.system.type.shared
-        ? (conf[type]?.typescript as TsValue)
-        : (await access(join(meta.system.type.shared, "tsconfig.json"))
-              .then(() => true)
-              .catch(() => false))
-          ? value.typescript.nodec
-          : meta.plugin.value.none;
-    const test = conf.test as TestValue;
-
+  for (const { typeFrmwk, name, cwd, ts } of types) {
     log.info(format(message.forType, name));
-    await install(typeFrmwk, ts, test, cwd);
-
+    await install(ts, test, typeFrmwk, cwd);
     log.info(message.setPkg);
-    await setPkgScripts(npm, { default: scripts.default }, "default", cwd);
-    await elSetPkgDeps(npm, ts, cwd);
+    await setPkgScripts({ def: scripts.default }, "def", npm, cwd);
+    await esltSetPkgDeps(ts, npm, cwd);
   }
   if (monorepo) {
-    await setPkgScripts(npm, { monorepo: scripts.monorepo }, "monorepo");
+    await setPkgScripts({ mono: scripts.monorepo }, "mono", npm);
   }
+  conf[value.lint.eslint] = {};
 
   log.info(format(message.pluginFinish, this.label));
   s.stop();
 }
 
-const install = async (
-  typeFrmwk: TypeFrmwk,
-  ts: TsValue,
-  test: TestValue,
-  cwd: string,
-) => {
-  const tmplt = template[ts ?? "default"] ?? template.default!;
-  const tmplt0 = tmplt[test ?? "default"] ?? tmplt.default!;
-  await installTmplt(base, tmplt0, typeFrmwk, cwd);
+const parseConf = async (conf: Conf) => {
+  const types0 = (conf.monorepo?.types ?? [conf.type]) as PrimeType[];
+  const monorepo = conf.type === meta.plugin.type.monorepo;
+  const types1 = types0
+    .map((e) => ({
+      typeFrmwk: (conf[e]?.framework ?? e) as TypeFrmwk,
+      name: conf[e]?.name as string,
+      cwd: (!monorepo ? "." : conf[e]?.name) as string,
+      ts: conf[e]?.typescript as TsValue,
+    }))
+    .filter(
+      (e) =>
+        !typeFrmwksSkip(undefined, meta.plugin.option.test, undefined).includes(
+          e.typeFrmwk,
+        ),
+    );
+  const types =
+    types0.length <= 1
+      ? types1
+      : [
+          ...types1,
+          {
+            typeFrmwk: meta.system.type.shared,
+            name: meta.system.type.shared,
+            cwd: meta.system.type.shared,
+            ts: (await access(join(meta.system.type.shared, "tsconfig.json"))
+              .then(() => true)
+              .catch(() => false))
+              ? value.typescript.nodec
+              : meta.plugin.value.none,
+          },
+        ];
+  if (types.find((e) => !e.name)) {
+    throw new Error();
+  }
+  const test = conf.test as TestValue;
+  const npm = conf.npm;
+  return { monorepo, types, test, npm };
 };
 
-const elSetPkgDeps = async (npm: NPM, ts: TsValue, cwd: string) => {
-  await setPkgDeps(npm, { default: pkgDeps }, "default", cwd);
+const install = async (
+  ts: TsValue,
+  test: TestValue,
+  typeFrmwk: TypeFrmwk,
+  cwd: string,
+) => {
+  const tmplt = template[ts ?? defKey] ?? template.default!;
+  if (!tmplt) {
+    throw new Error();
+  }
+  const tmplt0 = tmplt[test ?? defKey] ?? tmplt.default;
+  if (!tmplt0) {
+    throw new Error();
+  }
+  await installTmplt(
+    base,
+    tmplt0,
+    typeFrmwk === meta.plugin.type.lib || typeFrmwk === meta.plugin.type.cli
+      ? "pkg"
+      : typeFrmwk,
+    cwd,
+  );
+};
+
+const esltSetPkgDeps = async (ts: TsValue, npm: NPM, cwd: string) => {
+  await setPkgDeps({ pkgDeps }, "pkgDeps", npm, cwd);
   if (ts !== meta.plugin.value.none) {
-    await setPkgDeps(npm, { default: tsPkgDeps }, "default", cwd);
+    await setPkgDeps({ tsPkgDeps }, "tsPkgDeps", npm, cwd);
   }
 };
 
@@ -98,44 +134,46 @@ regValue(
   meta.plugin.option.lint,
 );
 
-type TargetType = PrimeType | typeof meta.system.type.shared;
-type TypeFrmwk = TargetType | NonNullable<FrmwkValue>;
+type TypeFrmwk =
+  | PrimeType
+  | typeof meta.system.type.shared
+  | NonNullable<FrmwkValue>;
 
 const base =
-  "https://raw.githubusercontent.com/bradhezh/prj-template/master/eslint" as const;
+  "https://raw.githubusercontent.com/bradhezh/prj-template/master/eslt" as const;
+const name = "eslint.config.mjs" as const;
 
 const template: Partial<
   Record<
-    NonNullable<TsValue> | "default",
-    Partial<Record<NonNullable<TestValue> | "default", Template<TypeFrmwk>>>
+    NonNullable<TsValue> | typeof defKey,
+    Partial<
+      Record<
+        NonNullable<TestValue> | typeof defKey,
+        Template<
+          | Exclude<
+              TypeFrmwk,
+              typeof meta.plugin.type.lib | typeof meta.plugin.type.cli
+            >
+          | "pkg"
+        >
+      >
+    >
   >
 > = {
   none: {
-    jest: {
-      default: {
-        name: "eslint.config.mjs",
-        path: "/eslint-jest-js.config.mjs",
-      },
-    },
-    default: {
-      default: { name: "eslint.config.mjs", path: "/eslint-js.config.mjs" },
-    },
+    jest: { default: { name, path: "/ts-n/jest/eslint.config.mjs" } },
+    default: { default: { name, path: "/ts-n/no/eslint.config.mjs" } },
   },
   default: {
     jest: {
-      cli: { name: "eslint.config.mjs", path: "/eslint-pkg-jest.config.mjs" },
-      lib: { name: "eslint.config.mjs", path: "/eslint-pkg-jest.config.mjs" },
-      shared: {
-        name: "eslint.config.mjs",
-        path: "/eslint-pkg-jest.config.mjs",
-      },
-      default: { name: "eslint.config.mjs", path: "/eslint-jest.config.mjs" },
+      pkg: { name, path: "/def/jest/pkg/eslint.config.mjs" },
+      shared: { name, path: "/def/jest/pkg/eslint.config.mjs" },
+      default: { name, path: "/def/jest/def/eslint.config.mjs" },
     },
     default: {
-      cli: { name: "eslint.config.mjs", path: "/eslint-pkg.config.mjs" },
-      lib: { name: "eslint.config.mjs", path: "/eslint-pkg.config.mjs" },
-      shared: { name: "eslint.config.mjs", path: "/eslint-pkg.config.mjs" },
-      default: { name: "eslint.config.mjs", path: "/eslint.config.mjs" },
+      pkg: { name, path: "/def/no/pkg/eslint.config.mjs" },
+      shared: { name, path: "/def/no/pkg/eslint.config.mjs" },
+      default: { name, path: "/def/no/def/eslint.config.mjs" },
     },
   },
 } as const;

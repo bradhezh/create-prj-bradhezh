@@ -4,8 +4,11 @@ import { mkdir, readFile, writeFile, rm, access } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { get } from "axios";
+import open from "open";
 import Json from "comment-json";
 import Yaml from "yaml";
+import { createInterface } from "node:readline/promises";
+import { group, text, password, cancel, spinner } from "@clack/prompts";
 
 import { meta, NPM } from "@/registry";
 import { message } from "@/message";
@@ -31,7 +34,7 @@ const command = {
   tar: "tar -xvf %s",
 } as const;
 
-export const setPkgName = async (npm: NPM, name: string, cwd?: string) => {
+export const setPkgName = async (name: string, npm: NPM, cwd?: string) => {
   await exec(format(command.setPkgName, npm, name), { cwd });
 };
 
@@ -82,9 +85,9 @@ export const setPkgVers = async (npm: NPM, cwd?: string) => {
 };
 
 export const setPkgScript = async (
-  npm: NPM,
   name: string,
-  script?: string,
+  script: string | undefined,
+  npm: NPM,
   cwd?: string,
 ) => {
   if (!script) {
@@ -94,7 +97,7 @@ export const setPkgScript = async (
   await exec(format(command.setPkgScript, npm, name, script), { cwd });
 };
 
-export const getPkgScript = async (npm: NPM, name: string, cwd?: string) => {
+export const getPkgScript = async (name: string, npm: NPM, cwd?: string) => {
   const script = (
     await exec(format(command.getPkgScript, npm, name), { cwd })
   ).stdout.trim();
@@ -102,38 +105,41 @@ export const getPkgScript = async (npm: NPM, name: string, cwd?: string) => {
 };
 
 type Script = { name: string; script?: string };
+export const defKey = "default" as const;
 export type Scripts<T extends string> = Partial<
-  Record<T | "default", readonly Script[]>
+  Record<T | typeof defKey, readonly Script[]>
 >;
 
 export const setPkgScripts = async <K extends string, T extends Scripts<K>>(
+  scripts: T & {
+    [K0 in keyof T]: K0 extends K | typeof defKey ? T[K0] : never;
+  },
+  key: K | undefined,
   npm: NPM,
-  scripts: T & { [K0 in keyof T]: K0 extends K | "default" ? T[K0] : never },
-  key: K,
   cwd?: string,
 ) => {
-  const scripts0 = scripts[key] ?? scripts.default;
+  const scripts0 = scripts[key ?? defKey] ?? scripts.default;
   if (!scripts0) {
     return;
   }
   for (const { name, script } of scripts0) {
-    await setPkgScript(npm, name, script, cwd);
+    await setPkgScript(name, script, npm, cwd);
   }
 };
 
 export const setPkgDep = async (
-  npm: NPM,
   name: string,
   version: string,
+  npm: NPM,
   cwd?: string,
 ) => {
   await exec(format(command.setPkgDeps, npm, name, version), { cwd });
 };
 
 export const setPkgDevDep = async (
-  npm: NPM,
   name: string,
   version: string,
+  npm: NPM,
   cwd?: string,
 ) => {
   await exec(format(command.setPkgDevDeps, npm, name, version), { cwd });
@@ -141,32 +147,32 @@ export const setPkgDevDep = async (
 
 type PkgDep = { name: string; version: string; dev?: boolean };
 export type PkgDeps<T extends string> = Partial<
-  Record<T | "default", readonly PkgDep[]>
+  Record<T | typeof defKey, readonly PkgDep[]>
 >;
 
 export const setPkgDeps = async <K extends string, T extends PkgDeps<K>>(
+  deps: T & { [K0 in keyof T]: K0 extends K | typeof defKey ? T[K0] : never },
+  key: K | undefined,
   npm: NPM,
-  deps: T & { [K0 in keyof T]: K0 extends K | "default" ? T[K0] : never },
-  key: K,
   cwd?: string,
 ) => {
-  const deps0 = deps[key] ?? deps.default;
+  const deps0 = deps[key ?? defKey] ?? deps.default;
   if (!deps0) {
     return;
   }
   for (const { name, version } of deps0.filter((e) => !e.dev)) {
-    await setPkgDep(npm, name, version, cwd);
+    await setPkgDep(name, version, npm, cwd);
   }
   for (const { name, version } of deps0.filter((e) => e.dev)) {
-    await setPkgDevDep(npm, name, version, cwd);
+    await setPkgDevDep(name, version, npm, cwd);
   }
 };
 
 export const setPkgBin = async (
-  npm: NPM,
   name: string,
+  script: string | undefined,
+  npm: NPM,
   cwd?: string,
-  script?: string,
 ) => {
   await exec(
     format(
@@ -214,17 +220,17 @@ export const rmPnpmNodeLinker = async () => {
 };
 
 export type BuiltDeps<T extends string> = Partial<
-  Record<T | "default", readonly string[]>
+  Record<T | typeof defKey, readonly string[]>
 >;
 
 export const setWkspaceBuiltDeps = async <
   K extends string,
   T extends BuiltDeps<K>,
 >(
-  deps: T & { [K0 in keyof T]: K0 extends K | "default" ? T[K0] : never },
-  key: K,
+  deps: T & { [K0 in keyof T]: K0 extends K | typeof defKey ? T[K0] : never },
+  key?: K,
 ) => {
-  const deps0 = deps[key] ?? deps.default;
+  const deps0 = deps[key ?? defKey] ?? deps.default;
   if (!deps0) {
     return;
   }
@@ -324,16 +330,20 @@ export const setConfig = async (key: string, value: unknown) => {
 };
 
 type Tmplt = { name: string; path?: string };
-export type Template<T extends string> = Partial<Record<T | "default", Tmplt>>;
+export type Template<T extends string> = Partial<
+  Record<T | typeof defKey, Tmplt>
+>;
 
 export const installTmplt = async <K extends string, T extends Template<K>>(
   base: string,
-  template: T & { [K0 in keyof T]: K0 extends K | "default" ? T[K0] : never },
+  template: T & {
+    [K0 in keyof T]: K0 extends K | typeof defKey ? T[K0] : never;
+  },
   key?: K,
   cwd?: string,
   tar?: boolean,
 ) => {
-  const tmplt = template[key ?? "default"] ?? template.default;
+  const tmplt = template[key ?? defKey] ?? template.default;
   if (!tmplt) {
     return;
   }
@@ -351,4 +361,141 @@ export const installTmplt = async <K extends string, T extends Template<K>>(
   }
   await exec(format(command.tar, tmplt.name), { cwd });
   await rm(file, { force: true });
+};
+
+export enum AuthKey {
+  user = "user",
+  readToken = "readToken",
+  token = "token",
+}
+type Auth = Partial<Record<AuthKey, string>>;
+type AuthCfgKey = Auth;
+type Spinner = ReturnType<typeof spinner>;
+
+export const auth = async (
+  key: AuthCfgKey,
+  ini: Auth,
+  hint: string,
+  tokenUrl: string,
+  s: Spinner,
+) => {
+  const value = await authGot(key, ini);
+  if (
+    (!key.user || value.user) &&
+    (!key.readToken || value.readToken) &&
+    (!key.token || value.token)
+  ) {
+    return value;
+  }
+  s.stop();
+  const rl = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+  await rl.question(hint);
+  rl.close();
+  if ((key.readToken && !value.readToken) || (key.token && !value.token)) {
+    await open(tokenUrl);
+  }
+  const answer = await authPrompt(
+    !!(key.user && !value.user),
+    !!(key.readToken && !value.readToken),
+    !!(key.token && !value.token),
+  );
+  s.start();
+  await setAuth(value, key, answer);
+  return value;
+};
+
+const authGot = async (key: AuthCfgKey, ini: Auth) => {
+  if (!key.user && !key.readToken && !key.token) {
+    return {};
+  }
+  return {
+    ...(!key.user
+      ? {}
+      : { user: ini.user ?? ((await getConfig(key.user)) as string) }),
+    ...(!key.readToken
+      ? {}
+      : {
+          readToken:
+            ini.readToken ?? ((await getConfig(key.readToken)) as string),
+        }),
+    ...(!key.token
+      ? {}
+      : { token: ini.token ?? ((await getConfig(key.token)) as string) }),
+  };
+};
+
+const authPrompt = (
+  forUser: boolean,
+  forReadToken: boolean,
+  forToken: boolean,
+) => {
+  return group(
+    {
+      ...(!forUser
+        ? {}
+        : {
+            user: () =>
+              text({
+                message: message.userGot,
+                validate: (value?: string) =>
+                  value ? undefined : message.userRequired,
+              }),
+          }),
+      ...(!forReadToken
+        ? {}
+        : {
+            readToken: () =>
+              password({
+                message: message.readTokenGot,
+                mask: "*",
+                validate: (value?: string) =>
+                  value ? undefined : message.readTokenRequired,
+              }),
+          }),
+      ...(!forToken
+        ? {}
+        : {
+            token: () =>
+              password({
+                message: message.tokenGot,
+                mask: "*",
+                validate: (value?: string) =>
+                  value ? undefined : message.tokenRequired,
+              }),
+          }),
+    },
+    { onCancel },
+  );
+};
+
+const setAuth = async (auth: Auth, key: AuthCfgKey, answer: Auth) => {
+  if (key.user && !auth.user) {
+    if (!answer.user) {
+      throw new Error();
+    }
+    auth.user = answer.user;
+    await setConfig(key.user, auth.user);
+  }
+  if (key.readToken && !auth.readToken) {
+    if (!answer.readToken) {
+      throw new Error();
+    }
+    auth.readToken = answer.readToken;
+    await setConfig(key.readToken, auth.readToken);
+  }
+  if (key.token && !auth.token) {
+    if (!answer.token) {
+      throw new Error();
+    }
+    auth.token = answer.token;
+    await setConfig(key.token, auth.token);
+  }
+};
+
+export const onCancel = () => {
+  cancel(message.opCanceled);
+  process.exit(0);
 };
