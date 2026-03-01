@@ -196,22 +196,34 @@ export const createWkspace = async (pkgs: readonly string[]) => {
 };
 
 export const addPkgInWkspace = async (pkg: string) => {
-  const doc = Yaml.parse(await readFile(workspace, "utf8").catch(() => "{}"));
+  const doc = Yaml.parse(
+    await readFile(workspace, "utf8").catch(() => "{}"),
+  ) as unknown;
   if (typeof doc !== "object" || doc === null || Array.isArray(doc)) {
     throw new Error(format(message.invFormat, workspace));
   }
-  void (doc.packages || (doc.packages = []));
-  doc.packages.push(pkg);
+  const doc0 = doc as Record<string, unknown>;
+  void (doc0.packages || (doc0.packages = []));
+  if (!Array.isArray(doc0.packages)) {
+    throw new Error(format(message.invFormat, workspace));
+  }
+  doc0.packages.push(pkg);
   await writeFile(workspace, Yaml.stringify(doc));
 };
 
 export const addOnlyBuiltDeps = async (deps: readonly string[]) => {
-  const doc = Yaml.parse(await readFile(workspace, "utf8").catch(() => "{}"));
+  const doc = Yaml.parse(
+    await readFile(workspace, "utf8").catch(() => "{}"),
+  ) as unknown;
   if (typeof doc !== "object" || doc === null || Array.isArray(doc)) {
     throw new Error(format(message.invFormat, workspace));
   }
-  void (doc.onlyBuiltDependencies || (doc.onlyBuiltDependencies = []));
-  doc.onlyBuiltDependencies.push(...deps);
+  const doc0 = doc as Record<string, unknown>;
+  void (doc0.onlyBuiltDependencies || (doc0.onlyBuiltDependencies = []));
+  if (!Array.isArray(doc0.onlyBuiltDependencies)) {
+    throw new Error(format(message.invFormat, workspace));
+  }
+  doc0.onlyBuiltDependencies.push(...deps);
   await writeFile(workspace, Yaml.stringify(doc));
 };
 
@@ -410,14 +422,16 @@ export const installTmplt = async <K extends string, T extends Template<K>>(
     return;
   }
   const file = join(cwd ?? "", tmplt.name);
-  await writeFile(
-    file,
-    (
-      await get(`${base}${tmplt.path ?? ""}`, {
-        responseType: !tar ? "text" : "arraybuffer",
-      })
-    ).data,
-  );
+  const res = await get<unknown>(`${base}${tmplt.path ?? ""}`, {
+    responseType: tar ? "arraybuffer" : "text",
+  });
+  const data = !(res.data instanceof ArrayBuffer)
+    ? res.data
+    : new Uint8Array(res.data);
+  if (typeof data !== "string" && !(data instanceof Uint8Array)) {
+    throw new Error();
+  }
+  await writeFile(file, data);
   if (!tar) {
     return;
   }

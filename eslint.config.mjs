@@ -4,18 +4,9 @@ import ts from "typescript-eslint";
 import globals from "globals";
 
 const rules = {
-  "no-cond-assign": ["warn", "always"],
   eqeqeq: "warn",
-  "@typescript-eslint/no-explicit-any": "warn",
-  "@typescript-eslint/no-unsafe-member-access": "off",
-  "@typescript-eslint/no-unsafe-call": "off",
-  "@typescript-eslint/no-unsafe-argument": "off",
-  "@typescript-eslint/no-unsafe-return": "off",
-  "@typescript-eslint/no-unsafe-assignment": "off",
-  "@typescript-eslint/no-unused-vars": [
-    "error",
-    { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
-  ],
+  "no-cond-assign": ["error", "always"],
+  "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
 };
 
 export default defineConfig([

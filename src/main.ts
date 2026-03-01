@@ -21,7 +21,8 @@ export const main = async () => {
       process.exit(1);
     }
     if (isAxiosError(err)) {
-      console.log(err.response?.data?.message || err.message);
+      const data = err.response?.data as { message?: string } | undefined;
+      console.log(data?.message || err.message);
     } else {
       console.log(err.message);
     }

@@ -122,7 +122,7 @@ type Ts =
   | keyof typeof value.typescript
   | typeof meta.plugin.value.none
   | undefined;
-type TsKey = NonNullable<Ts>;
+type TsKey = NonNullable<Ts> | typeof defKey;
 const template: Partial<Record<TypeFrmwkKey, Template<TsKey>>> = {
   nest: { def: { name, path: "/be/meta/rspack.config.ts" } },
   express: {

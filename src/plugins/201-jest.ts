@@ -131,7 +131,7 @@ const install = async ({ typeFrmwk, ts, shared, cwd }: InstallData) => {
   if (!tmplt) {
     throw new Error();
   }
-  await installTmplt(base, tmplt, ts, cwd);
+  await installTmplt(base, tmplt, ts, cwd, true);
 };
 
 type PkgData = {
@@ -193,20 +193,10 @@ const base =
   "https://raw.githubusercontent.com/bradhezh/prj-template/master/jest" as const;
 const name = "jest.config.js" as const;
 
-const nestTmplt = {
-  shared: { name, path: "/cfg/meta/def/shrd/jest.config.js" },
-  def: { name, path: "/cfg/meta/def/no/jest.config.js" },
-} as const;
-
 type Ts =
   | keyof typeof value.typescript
   | typeof meta.plugin.value.none
   | undefined;
-const sharedTmplt = {
-  none: { name, path: "/cfg/no/jest.config.js" },
-  def: { name, path: "/cfg/shrd/jest.config.js" },
-} as const;
-
 type TsKey = NonNullable<Ts> | typeof defKey;
 type TypeFrmwk =
   | PrimeType
@@ -245,9 +235,17 @@ const template: Partial<
   },
 } as const;
 
-const srcTmplt: Partial<
-  Record<TypeFrmwk | typeof defKey, Template<NonNullable<TsKey>>>
-> = {
+const sharedTmplt = {
+  none: { name, path: "/cfg/no/jest.config.js" },
+  def: { name, path: "/cfg/shrd/jest.config.js" },
+} as const;
+
+const nestTmplt = {
+  shared: { name, path: "/cfg/meta/def/shrd/jest.config.js" },
+  def: { name, path: "/cfg/meta/def/no/jest.config.js" },
+} as const;
+
+const srcTmplt: Partial<Record<TypeFrmwk | typeof defKey, Template<TsKey>>> = {
   nest: { def: { name: "jest.tar", path: "/src/nest/jest.tar" } },
   express: {
     none: { name: "jest.tar", path: "/src/expr/js/jest.tar" },

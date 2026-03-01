@@ -10,6 +10,7 @@ const dynamicImport = new Function("specifier", "return import(specifier)");
 void (async () => {
   const dir = join(__dirname, "plugins");
   for (const file of (await readdir(dir)).filter((e) => e.endsWith(".js"))) {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-call
     await dynamicImport(pathToFileURL(join(dir, file)).href);
   }
   await main();

@@ -224,8 +224,8 @@ const name = "type.tar" as const;
 const template = { name: "package.json", path: "/mono/package.json" } as const;
 
 const sharedTmplt = {
-  js: { name, path: "/shrd/ts/type.tar" },
-  def: { name, path: "/shrd/js/type.tar" },
+  js: { name, path: "/shrd/js/type.tar" },
+  def: { name, path: "/shrd/ts/type.tar" },
 } as const;
 
 const script = {
@@ -239,8 +239,7 @@ const script = {
   start: { name: "start", script: "pnpm --filter %s start" },
   copyDist: {
     name: "copy-dist",
-    script:
-      "pnpm dlx shx rm -rf backend/dist && pnpm dlx shx cp -r frontend/dist backend/dist",
+    script: "pnpm dlx shx rm -rf %s/dist && pnpm dlx shx cp -r %s/dist %s/dist",
   },
   frontend: { suffix: ":fe" },
   mobile: { suffix: ":m" },

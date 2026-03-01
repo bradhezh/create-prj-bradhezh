@@ -224,7 +224,7 @@ export const getElem = (
   value: string | undefined,
 ) => {
   if ((!type && !option && !value) || (value && !option)) {
-    throw new Error();
+    throw new Error(message.invElem);
   }
   if (!option) {
     const type0 = options.type.find((e) => e.name === type!);

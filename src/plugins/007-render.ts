@@ -157,7 +157,7 @@ const getOwner = async (api: AxiosInstance) => {
         owner: { id },
       },
     ],
-  } = await api.get(ownersEp);
+  } = await api.get<{ owner: { id: string } }[]>(ownersEp);
   if (typeof id !== "string") {
     throw new Error();
   }
@@ -189,12 +189,14 @@ const getCred = async (
   if (cred) {
     return cred;
   }
-  const { data } = await api.get(credsEp, { params: { name } });
+  const { data } = await api.get<{ id: string }[]>(credsEp, {
+    params: { name },
+  });
   const docker = srcData as Docker;
   const id =
     (data?.length && data[0].id) ||
     (
-      await api.post(credsEp, {
+      await api.post<{ id: string }>(credsEp, {
         ownerId,
         name,
         registry,
@@ -235,7 +237,6 @@ const createSvc = async (
       },
     };
   } else if (src === value.deploySrc.repo) {
-    log.warn("todo: private repos need to be authed via render github app...");
     src0 = { repo: (srcData as GitSvc).repo! };
     if (type === meta.plugin.type.backend) {
       type0 = { type: webSvc };
@@ -267,7 +268,7 @@ const createSvc = async (
     data: {
       service: { id: service },
     },
-  } = await api.post(svcsEp, {
+  } = await api.post<{ service: { id: string } }>(svcsEp, {
     ownerId,
     name,
     ...src0,

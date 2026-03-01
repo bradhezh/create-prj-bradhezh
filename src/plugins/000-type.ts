@@ -12,6 +12,7 @@ import {
   setPkgName,
   setPkgVers,
   getPkgScript,
+  setPkgScript,
   setPkgScripts,
   setWkspaceBuiltDeps,
   rmPnpmNodeLinker,
@@ -76,12 +77,18 @@ const install = async ({ typeFrmwk, npm, cwd }: InstallData, s: Spinner) => {
   }
 };
 
-type PkgData = { typeFrmwk: TypeFrmwk; npm: NPM; cwd: string };
+type PkgData = { name: string; typeFrmwk: TypeFrmwk; npm: NPM; cwd: string };
 
-const setPkg = async ({ typeFrmwk, npm, cwd }: PkgData) => {
+const setPkg = async ({ name, typeFrmwk, npm, cwd }: PkgData) => {
   await setPkgName(name, npm, cwd);
   await setPkgVers(npm, cwd);
   await setPkgScripts(scripts, typeFrmwk, npm, cwd);
+  if (command[typeFrmwk]) {
+    for (const { name, script } of nonTmpltScripts) {
+      if (!(await getPkgScript(name, npm, cwd)))
+        await setPkgScript(name, script, npm, cwd);
+    }
+  }
   if (
     typeFrmwk === value.framework.next &&
     (await getPkgScript(nextScripts[0].name, npm, "."))
@@ -292,6 +299,11 @@ const scripts = {
   react: [{ name: "start", script: "vite preview" }],
   expo: [{ name: "dev", script: "expo start" }],
 } as const;
+
+const nonTmpltScripts = [
+  { name: "test", script: "exit 0" },
+  { name: "lint", script: "exit 0" },
+] as const;
 
 const nextScripts = [
   { name: "copy-dist", script: undefined },

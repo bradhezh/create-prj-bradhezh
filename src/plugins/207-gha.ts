@@ -555,14 +555,6 @@ const name = "gha.tar" as const;
 
 type Deploy = keyof typeof value.deployment | undefined;
 type DeployKey = NonNullable<Deploy> | typeof defKey;
-const pkgTmplt: Partial<Record<DeployKey, Template<"mono" | NPM>>> = {
-  npmjs: {
-    mono: { name, path: "/pkg/npm/mono/gha.tar" },
-    npm: { name, path: "/pkg/npm/npm/gha.tar" },
-    pnpm: { name, path: "/pkg/npm/pnpm/gha.tar" },
-  },
-} as const;
-
 type DeploySrc = keyof typeof value.deploySrc | undefined;
 type SrcKey =
   | Exclude<
@@ -667,6 +659,14 @@ const template: Partial<
         },
       },
     },
+  },
+} as const;
+
+const pkgTmplt: Partial<Record<DeployKey, Template<"mono" | NPM>>> = {
+  npmjs: {
+    mono: { name, path: "/pkg/npm/mono/gha.tar" },
+    npm: { name, path: "/pkg/npm/npm/gha.tar" },
+    pnpm: { name, path: "/pkg/npm/pnpm/gha.tar" },
   },
 } as const;
 

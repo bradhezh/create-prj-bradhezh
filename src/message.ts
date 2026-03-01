@@ -25,6 +25,7 @@ export const message = {
   circularDep: "Circular dependency.",
   afterLast: "Element cannot be after ones as the last.",
   invSkipOrKeep: "Invalid skip or keep.",
+  invElem: "Invalid element.",
   sysType: "Type cannot be registered with a system name.",
   typeNotExist: "Type does not exist.",
   typeRequired: "Type must be specified for type options.",

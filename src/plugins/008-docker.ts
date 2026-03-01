@@ -252,11 +252,6 @@ const base =
   "https://raw.githubusercontent.com/bradhezh/prj-template/master/dkr" as const;
 const name = "dkr.tar" as const;
 
-const ignoreTmplt = {
-  name: ".dockerignore",
-  path: "/ignore/.dockerignore",
-} as const;
-
 const template: Partial<
   Record<
     "mono" | NPM | typeof defKey,
@@ -334,6 +329,11 @@ const template: Partial<
       },
     },
   },
+} as const;
+
+const ignoreTmplt = {
+  name: ".dockerignore",
+  path: "/ignore/.dockerignore",
 } as const;
 
 const dhReg = "docker.io" as const;

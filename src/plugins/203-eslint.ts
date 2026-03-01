@@ -172,7 +172,8 @@ type TypeFrmwkKey =
       TypeFrmwk,
       typeof meta.plugin.type.lib | typeof meta.plugin.type.cli
     >
-  | "pkg";
+  | "pkg"
+  | typeof defKey;
 const template: Partial<
   Record<TsKey, Partial<Record<TestKey, Template<TypeFrmwkKey>>>>
 > = {
