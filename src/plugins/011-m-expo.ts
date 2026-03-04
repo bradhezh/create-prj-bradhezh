@@ -1,4 +1,7 @@
 import { execSync } from "node:child_process";
+import { readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import Json from "comment-json";
 import { createInterface } from "node:readline/promises";
 import { log, spinner } from "@clack/prompts";
 import { format } from "node:util";
@@ -41,12 +44,16 @@ const parseConf = (conf: Conf, type: PrimeType) => {
   if (npm !== NPM.npm && npm !== NPM.pnpm) {
     throw new Error();
   }
+  const name = conf[conf.type as PrimeType]?.name;
+  if (!name) {
+    throw new Error();
+  }
   const deploy = parseDeploy(conf, type);
   if (!deploy) {
     return;
   }
   const cicd = parseCicd(conf);
-  return { type, npm, ...deploy, ...cicd };
+  return { type, npm, name, ...deploy, ...cicd };
 };
 
 const parseDeploy = (conf: Conf, type: PrimeType) => {
@@ -85,9 +92,30 @@ const authExpo = async ({ forToken }: AuthData, s: Spinner) => {
   return { token };
 };
 
-type ExpoData = { npm: NPM; cwd: string };
+type ExpoData = { npm: NPM; name: string; cwd: string };
 
-const createExpo = async ({ npm, cwd }: ExpoData, s: Spinner) => {
+const createExpo = async ({ npm, name, cwd }: ExpoData, s: Spinner) => {
+  const file = join(cwd, config);
+  const doc = Json.parse(await readFile(file, "utf-8").catch(() => "{}"));
+  if (
+    typeof doc !== "object" ||
+    doc === null ||
+    Array.isArray(doc) ||
+    typeof doc.expo !== "object" ||
+    doc.expo === null ||
+    Array.isArray(doc.expo) ||
+    typeof doc.expo.name !== "string" ||
+    typeof doc.expo.slug !== "string"
+  ) {
+    throw new Error();
+  }
+  doc.expo.name = name;
+  doc.expo.slug = name;
+  const text =
+    Json.stringify(doc, null, 2).replace(/\[\s+"([^"]+)"\s+\]/g, '["$1"]') +
+    "\n";
+  await writeFile(file, text);
+
   const link = npm === NPM.npm ? command.npmLink : command.pnpmLink;
   log.info(link);
   s.stop();
@@ -150,6 +178,7 @@ const command = {
 
 const tokenPath = "expo.token" as const;
 const tokenUrl = "https://expo.dev/settings/access-tokens" as const;
+const config = "app.json" as const;
 
 const message = {
   ...msg,
