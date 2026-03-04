@@ -142,7 +142,7 @@ const parseDeployPkg = (conf: Conf) => {
     conf.lib?.deployment === value.deployment.npmjs ||
     conf.cli?.deployment === value.deployment.npmjs
   ) {
-    log.warn("todo: parse github conf for npmjs...");
+    void 0;
   } else if (valid(conf.lib?.deployment) || valid(conf.cli?.deployment)) {
     throw new Error();
   }
