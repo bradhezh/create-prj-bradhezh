@@ -1,5 +1,5 @@
 import { defineConfig } from "@rspack/cli";
-import { ExternalItem } from "@rspack/core";
+import { rspack, ExternalItem } from "@rspack/core";
 import nodeExternals from "webpack-node-externals";
 import { TsCheckerRspackPlugin } from "ts-checker-rspack-plugin";
 import { RunScriptWebpackPlugin } from "run-script-webpack-plugin";
@@ -30,10 +30,17 @@ export default defineConfig({
 
   module: { rules: [{ test: /\.ts$/, use: { loader: "builtin:swc-loader" } }] },
 
+  ...(!dev && { devTool: "nosources-source-map" }),
+
   devServer: { devMiddleware: { writeToDisk: true } },
 
   plugins: [
     new TsCheckerRspackPlugin(),
+    new rspack.BannerPlugin({
+      banner: "#!/usr/bin/env node",
+      raw: true,
+      entryOnly: true,
+    }),
     dev && new RunScriptWebpackPlugin({ name: "index.js" }),
   ].filter(Boolean),
 });

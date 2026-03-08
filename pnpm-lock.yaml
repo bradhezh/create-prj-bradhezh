@@ -20,6 +20,9 @@ importers:
       open:
         specifier: ^11.0.0
         version: 11.0.0
+      source-map-support:
+        specifier: ^0.5.21
+        version: 0.5.21
       yaml:
         specifier: ^2.8.2
         version: 2.8.2

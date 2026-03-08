@@ -1,3 +1,4 @@
+import "source-map-support/register";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";

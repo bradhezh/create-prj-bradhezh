@@ -38,6 +38,7 @@ async function run(this: Plugin, conf: Conf) {
 
   log.info(format(message.pluginFinish, this.label));
   s.stop();
+  throw new Error();
 }
 
 const parseConf = (conf: Conf) => {

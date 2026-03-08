@@ -36,6 +36,8 @@ export default defineConfig({
 
   module: { rules: [{ test: /\.ts$/, use: { loader: "builtin:swc-loader" } }] },
 
+  ...(!dev && { devTool: "nosources-source-map" }),
+
   devServer: { devMiddleware: { writeToDisk: true } },
 
   plugins: [
